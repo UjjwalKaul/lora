@@ -2,48 +2,152 @@
 
 A comprehensive, plain-English reference manual for understanding Deep Learning, Linear Algebra for AI, and Low-Rank Adaptation (LoRA).
 
-Every technical term in this guide is paired with a real-world analogy and concrete examples.
+Every technical term in this guide is paired with a real-world analogy, concrete examples, and visual Mermaid diagrams.
 
 ---
 
 ## Table of Contents
 
-1. [**Core AI & LLM Mechanics (The Factory Floor)**](#core-ai)
+1. [**Visual Guide: The 4 Diagrams of LoRA**](#visual-guide)
+   - [Diagram 1: The LoRA Architecture (Forward Pass)](#diagram-1)
+   - [Diagram 2: How a LoRA is Trained (Gradient Freezing)](#diagram-2)
+   - [Diagram 3: Multi-LoRA Hot-Swapping (The Real-World Superpower)](#diagram-3)
+   - [Diagram 4: Zero-Latency Weight Merging (Deployment)](#diagram-4)
+2. [**Core AI & LLM Mechanics (The Factory Floor)**](#core-ai)
    - [Parameters & Weights (The Soundboard Dials)](#parameters-weights)
    - [Pre-Training vs. Fine-Tuning (School vs. Hospital Orientation)](#pretraining-vs-finetuning)
    - [Forward Pass, Loss, and Gradients (Assembly Line & Foggy Mountain)](#forward-loss-gradients)
    - [Why AdamW Optimizer Eats Your GPU Memory (Momentum & Variance Ledger)](#adamw-memory)
    - [Freezing Weights (Locking the Dials)](#freezing-weights)
-2. [**Linear Algebra in Plain English**](#linear-algebra)
+3. [**Linear Algebra in Plain English**](#linear-algebra)
    - [High Dimensions & Embeddings (The Trait Checklist)](#embeddings)
    - [Row vs. Column Vectors in PyTorch ($y = x W^T$)](#row-vs-column)
    - [Linear Combinations & Independence (The Primary Colors Rule)](#linear-combinations)
    - [Matrix Rank (True Degrees of Freedom)](#matrix-rank)
    - [Subspaces (A Sheet of Paper in a Living Room)](#subspaces)
-3. [**LoRA (Low-Rank Adaptation) Unpacked**](#lora-unpacked)
+4. [**LoRA (Low-Rank Adaptation) Unpacked**](#lora-unpacked)
    - [The Core Problem: Full Fine-Tuning is Too Heavy](#core-problem)
    - [The Intrinsic Rank Hypothesis (Car Steering Analogy)](#intrinsic-rank)
    - [The Matrix Factorization Trick ($\Delta W = B \cdot A$)](#factorization)
    - [The Initialization Trick (Why A is Random and B is Zero)](#initialization-trick)
    - [The Scaling Factor ($\alpha / r$)](#scaling-factor)
-4. [**The Transformer Brain: Why Target Attention?**](#transformer-attention)
+5. [**The Transformer Brain: Why Target Attention?**](#transformer-attention)
    - [The Library Analogy for Attention (Query, Key, Value)](#library-analogy)
    - [Why LoRA Targets $W_q$ and $W_v$](#why-target-wq-wv)
-5. [**The Grand Piano Analogy (The Complete Mental Model)**](#grand-piano)
-6. [**Hardware, Files, and Byte Math**](#hardware-and-files)
+6. [**The Grand Piano Analogy (The Complete Mental Model)**](#grand-piano)
+7. [**Hardware, Files, and Byte Math**](#hardware-and-files)
    - [What is Inside a `.pt` File?](#inside-pt-file)
    - [Napkin Math: Why Our Adapter Was Exactly 1.8 MB](#napkin-math)
    - [Model Incompatibility: The Paris vs. Tokyo GPS Problem](#model-incompatibility)
    - [Quantization & QLoRA: Measuring with a Coarser Ruler](#quantization-qlora)
-7. [**Real-World Lessons: Style vs. Reasoning**](#lessons-learned)
+8. [**Real-World Lessons: Style vs. Reasoning**](#lessons-learned)
    - [Why Pirate Worked, but Jokes Made No Sense](#pirate-vs-joker)
    - [Cargo Cult AI](#cargo-cult)
    - [The LIMA Principle (Quality Over Quantity)](#lima-principle)
-8. [**Master Jargon Glossary**](#glossary)
+9. [**Master Jargon Glossary**](#glossary)
 
 ---
 
-## <a id="core-ai"></a>1. Core AI & LLM Mechanics (The Factory Floor)
+## <a id="visual-guide"></a>1. Visual Guide: The 4 Diagrams of LoRA
+
+### <a id="diagram-1"></a>Diagram 1: The LoRA Architecture (How it Works in the Forward Pass)
+
+```mermaid
+flowchart TD
+    Input["Input Words / Tokens (Vector x)"]
+    
+    subgraph BaseBranch["Frozen Base Model (135M+ Params, Locked)"]
+        W0["Base Linear Layer W_0 (e.g. 4096 x 4096)<br>requires_grad = False"]
+    end
+    
+    subgraph LoRABranch["Trainable LoRA Branch (Rank r = 8)"]
+        A["Matrix A (Down-projection: 4096 -> 8)<br>Initialized with Random Gaussian"]
+        Bottleneck["8-dimensional bottleneck<br>(Compresses the signal)"]
+        B["Matrix B (Up-projection: 8 -> 4096)<br>Initialized to ALL ZEROS"]
+        Scale["Scale Factor (alpha / r)"]
+    end
+    
+    Add(("Sum (+)<br>Base Sound + LoRA Nudge"))
+    Output["Final Output Prediction (Vector h)"]
+    
+    Input --> W0
+    Input --> A
+    A --> Bottleneck
+    Bottleneck --> B
+    B --> Scale
+    W0 --> Add
+    Scale --> Add
+    Add --> Output
+```
+
+---
+
+### <a id="diagram-2"></a>Diagram 2: How a LoRA is Trained (The Training Loop & Gradient Freezing)
+
+```mermaid
+flowchart LR
+    Data["Training Data<br>(Prompt + Target)"] --> Fwd["Forward Pass<br>(Guess next token)"]
+    Fwd --> Loss["Cross-Entropy Loss<br>(Penalty for incorrect words)"]
+    Loss --> Backprop["Backpropagation<br>(Calculate gradients)"]
+    
+    Backprop -->|"LOCKED! Zero optimizer memory"| W0["Base Model W_0<br>(134.5M parameters frozen)"]
+    Backprop -->|"Gradients Flow!"| GradA["Update Matrix A<br>(230k parameters)"]
+    Backprop -->|"Gradients Flow!"| GradB["Update Matrix B<br>(230k parameters)"]
+    
+    GradA --> AdamW["AdamW Optimizer<br>(Only tracks 0.34% of the model!)"]
+    GradB --> AdamW
+    AdamW --> Save["Saved Adapter File<br>(pirate_adapter.pt: 1.8 MB)"]
+```
+
+---
+
+### <a id="diagram-3"></a>Diagram 3: Multi-LoRA Hot-Swapping (The Real-World Superpower)
+
+```mermaid
+flowchart TD
+    GPU["Single GPU VRAM (e.g. RTX 3050 6GB)"]
+    Base["Shared Base Model in VRAM<br>SmolLM2-135M (Frozen: ~500 MB)"]
+    
+    subgraph Adapters["Pocket-Sized LoRA Adapters (~1.8 MB each)"]
+        A1["Pirate LoRA (pirate_adapter.pt)"]
+        A2["Joker LoRA (joker_adapter.pt)"]
+        A3["JSON Extractor LoRA"]
+    end
+    
+    GPU --- Base
+    Base -.->|"Active Adapter (0 ms switch)"| A1
+    Base -.->|"Waiting on disk/RAM"| A2
+    Base -.->|"Waiting on disk/RAM"| A3
+    
+    A1 --> Out1["Outputs: 'Ahoy matey, hoist the mainsail!'"]
+    A2 --> Out2["Outputs: Informative answer + Punchline"]
+    A3 --> Out3["Outputs: Strict, clean JSON schemas"]
+```
+
+---
+
+### <a id="diagram-4"></a>Diagram 4: Zero-Latency Weight Merging (Deployment)
+
+```mermaid
+flowchart LR
+    subgraph TrainingPhase["During Development / Multi-LoRA (Dual Branch)"]
+        W0["W_0 (Base Weights)"]
+        Delta["Delta W = (alpha/r) * (B @ A)"]
+        W0 --- Plus(("+")) --- Delta
+    end
+    
+    TrainingPhase -->|"Run: lora_linear.merge()"| MergeAction["Add Delta W directly into W_0<br>W_base += delta_w"]
+    
+    subgraph ProductionPhase["In Production (Single Layer)"]
+        MergedW["Merged Weight Matrix W_new<br>(Zero LoRA branch overhead, exact same speed as base model!)"]
+    end
+    
+    MergeAction --> ProductionPhase
+```
+
+---
+
+## <a id="core-ai"></a>2. Core AI & LLM Mechanics (The Factory Floor)
 
 ### <a id="parameters-weights"></a>Parameters & Weights
 * **Formal Definition:** Numerical values in a neural network that multiply inputs to calculate outputs.
@@ -63,15 +167,6 @@ Every technical term in this guide is paired with a real-world analogy and concr
 ---
 
 ### <a id="forward-loss-gradients"></a>Forward Pass, Loss, and Gradients
-
-```
-   [User Prompt] ---> (1. Forward Pass) ---> [Model's Guess]
-                                                    |
-                                            (2. Loss Function)
-                                             Compare with Target
-                                                    |
-   [Updated Weights] <-- (3. Backpropagation) <-- [Error Signal]
-```
 
 1. **The Forward Pass (The Factory Assembly Line):**
    Input words enter the network, get converted into numbers, and pass forward through layer after layer of matrix multiplications until the model outputs a predicted next word.
@@ -114,7 +209,7 @@ Frozen weights drop their training memory cost to **zero extra bytes**!
 
 ---
 
-## <a id="linear-algebra"></a>2. Linear Algebra in Plain English
+## <a id="linear-algebra"></a>3. Linear Algebra in Plain English
 
 ### <a id="embeddings"></a>High Dimensions & Embeddings (The Trait Checklist)
 When you hear that a model has an embedding size of **$d = 4096$** (or **$576$** in SmolLM2), what does that dimension mean?
@@ -168,7 +263,7 @@ When you hear that a model has an embedding size of **$d = 4096$** (or **$576$**
 
 ---
 
-## <a id="lora-unpacked"></a>3. LoRA (Low-Rank Adaptation) Unpacked
+## <a id="lora-unpacked"></a>4. LoRA (Low-Rank Adaptation) Unpacked
 
 ### <a id="core-problem"></a>The Core Problem: Full Fine-Tuning is Too Heavy
 In full fine-tuning, you update the entire weight matrix:
@@ -193,21 +288,6 @@ In 2021, Microsoft researchers published a breakthrough hypothesis:
 Instead of allocating a massive $4096 \times 4096$ grid for $\Delta W$, LoRA decomposes it into two slim matrices:
 
 $$\Delta W = B \cdot A$$
-
-```
-   Input x (dim 4096)
-     |           \
-     | (Frozen)   \ (Trainable)
-   [ W_0 ]       [ Matrix A ]  (Shape: 4 x 4096) -> Squeezes down to 4
-     |                 |
-     |           [ Matrix B ]  (Shape: 4096 x 4) -> Expands back to 4096
-     |                 |
-     \           * (alpha / r)
-      \               /
-       +-------------+
-              |
-      Output h (dim 4096)
-```
 
 #### The Math Check for $r = 4$:
 * **Matrix A:** Shape $(4 \times 4096) = 16,384$ numbers. (Acts as the **compressor**).
@@ -241,7 +321,7 @@ $$h = W_0 x + \frac{\alpha}{r} (B A x)$$
 
 ---
 
-## <a id="transformer-attention"></a>4. The Transformer Brain: Why Target Attention?
+## <a id="transformer-attention"></a>5. The Transformer Brain: Why Target Attention?
 
 In transformers (like LLaMA, GPT, or SmolLM2), why do we attach LoRA to $W_q$ and $W_v$?
 
@@ -257,7 +337,7 @@ Attention inside an LLM works like a digital search system:
 
 ---
 
-## <a id="grand-piano"></a>5. The Grand Piano Analogy (The Complete Mental Model)
+## <a id="grand-piano"></a>6. The Grand Piano Analogy (The Complete Mental Model)
 
 | Concept | The Grand Piano Analogy |
 | :--- | :--- |
@@ -273,7 +353,7 @@ Attention inside an LLM works like a digital search system:
 
 ---
 
-## <a id="hardware-and-files"></a>6. Hardware, Files, and Byte Math
+## <a id="hardware-and-files"></a>7. Hardware, Files, and Byte Math
 
 ### <a id="inside-pt-file"></a>What is Inside a `.pt` File?
 A `.pt` file is simply PyTorch's serialization format. It is a standard Python dictionary of tensor arrays:
@@ -314,7 +394,7 @@ Why can't you plug `pirate_adapter.pt` into `LLaMA-3`?
 
 ---
 
-## <a id="lessons-learned"></a>7. Real-World Lessons: Style vs. Reasoning
+## <a id="lessons-learned"></a>8. Real-World Lessons: Style vs. Reasoning
 
 In our live experiments, we built two adapters:
 * 🏴‍☠️ **The Pirate Adapter:** Flawless victory (`"Avast ye! Clear the barnacles off yer hard drive..."`).
@@ -342,7 +422,7 @@ Meta's famous paper **LIMA (Less Is More for Alignment)** demonstrated that for 
 
 ---
 
-## <a id="glossary"></a>8. Master Jargon Glossary
+## <a id="glossary"></a>9. Master Jargon Glossary
 
 | Term | Plain English Meaning |
 | :--- | :--- |
