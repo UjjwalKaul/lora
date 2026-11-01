@@ -256,13 +256,20 @@ def train_unet_lora(latents_list, embeddings_list):
     except Exception as e:
         print(f"  Note on save_attn_procs: {e}")
     
-    # Save standalone PyTorch state dict for direct inspection
+    # Save standalone PyTorch state dict and diffusers-compatible safetensors
+    from safetensors.torch import save_file
     adapter_pt_path = os.path.join(OUTPUT_DIR, "marvel_adapter.pt")
+    safetensors_path = os.path.join(OUTPUT_DIR, "pytorch_lora_weights.safetensors")
+
     lora_state_dict = {name: param.cpu() for name, param in unet.named_parameters() if "lora" in name}
     torch.save(lora_state_dict, adapter_pt_path)
     
-    file_size_mb = os.path.getsize(adapter_pt_path) / (1024 ** 2)
-    print(f"  Saved: {adapter_pt_path} ({file_size_mb:.2f} MB)")
+    # Prefix with 'unet.' so diffusers StableDiffusionPipeline.load_lora_weights recognizes it
+    unet_lora_state_dict = {f"unet.{k}": v for k, v in lora_state_dict.items()}
+    save_file(unet_lora_state_dict, safetensors_path)
+    
+    file_size_mb = os.path.getsize(safetensors_path) / (1024 ** 2)
+    print(f"  Saved: {safetensors_path} ({file_size_mb:.2f} MB)")
     print("=" * 65)
 
 def main():

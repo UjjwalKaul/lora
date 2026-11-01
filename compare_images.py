@@ -51,7 +51,9 @@ def generate_comparison(
 
     # Pass 2: Load LoRA and Generate Image B
     print("\n3. Loading Marvel LoRA into UNet...")
-    pipe.load_lora_weights(LORA_DIR)
+    pipe.load_lora_weights(LORA_DIR, adapter_name="default")
+    pipe.set_adapters(["default"], adapter_weights=[lora_scale])
+    print(f"  Active adapters: {pipe.get_active_adapters()} (Scale: {lora_scale})")
     
     print("\n4. Generating Image B: With Marvel LoRA...")
     gen_lora = torch.Generator(device=device).manual_seed(seed)
@@ -60,8 +62,7 @@ def generate_comparison(
         negative_prompt=negative_prompt,
         num_inference_steps=steps,
         guidance_scale=guidance_scale,
-        generator=gen_lora,
-        cross_attention_kwargs={"scale": lora_scale}
+        generator=gen_lora
     ).images[0]
 
     # Stitch Side-by-Side (512x2 = 1024 width x 512 height + 40px top banner)
@@ -104,3 +105,4 @@ if __name__ == "__main__":
         seed=args.seed,
         output_filename=args.out
     )
+

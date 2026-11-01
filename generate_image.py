@@ -46,8 +46,9 @@ def generate(
     if use_lora:
         print(f"Loading Marvel LoRA weights from {LORA_DIR}...")
         try:
-            pipe.load_lora_weights(LORA_DIR)
-            print("  [OK] LoRA weights loaded successfully!")
+            pipe.load_lora_weights(LORA_DIR, adapter_name="default")
+            pipe.set_adapters(["default"], adapter_weights=[lora_scale])
+            print(f"  [OK] LoRA adapter active: {pipe.get_active_adapters()} (Scale: {lora_scale})")
         except Exception as e:
             print(f"  [!] Note: Loading LoRA weights: {e}")
 
@@ -57,17 +58,12 @@ def generate(
     # Run Denoising Diffusion Pipeline
     print(f"\nGenerating {512}x{512} image over {steps} denoising timesteps...")
     
-    kwargs = {}
-    if use_lora and lora_scale != 1.0:
-        kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
-
     image = pipe(
         prompt=prompt,
         negative_prompt=negative_prompt,
         num_inference_steps=steps,
         guidance_scale=guidance_scale,
-        generator=generator,
-        **kwargs
+        generator=generator
     ).images[0]
 
     out_path = os.path.join(OUTPUT_DIR, output_filename)
