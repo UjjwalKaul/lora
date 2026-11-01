@@ -21,10 +21,10 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "marvel_lora")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Training Hyperparameters tuned for RTX 3050 (6GB VRAM)
-RANK = 4
-ALPHA = 4.0
-LEARNING_RATE = 1e-4
-MAX_TRAIN_STEPS = 150
+RANK = 16
+ALPHA = 32.0
+LEARNING_RATE = 1.5e-4
+MAX_TRAIN_STEPS = 600
 BATCH_SIZE = 1
 GRADIENT_ACCUMULATION_STEPS = 2
 SEED = 42
@@ -246,15 +246,7 @@ def train_unet_lora(latents_list, embeddings_list):
     print_vram("Peak Post-Training")
 
     # 6. Save Trained LoRA Adapter
-    print(f"\nSaving Marvel LoRA adapter to {OUTPUT_DIR}...")
-    try:
-        unet.save_pretrained(OUTPUT_DIR)
-    except Exception as e:
-        print(f"  Note on save_pretrained: {e}")
-    try:
-        unet.save_attn_procs(OUTPUT_DIR)
-    except Exception as e:
-        print(f"  Note on save_attn_procs: {e}")
+    print(f"\nSaving Marvel Color Grading LoRA adapter to {OUTPUT_DIR}...")
     
     # Save standalone PyTorch state dict and diffusers-compatible safetensors
     from safetensors.torch import save_file
