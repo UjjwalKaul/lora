@@ -1,0 +1,22 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python byte code & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Model checkpoints / heavy weights
+*.pt
+*.bin
+*.safetensors
+
+# Loose training images (kept packaged inside zip archives)
+data/marvel_posters/*.png
+
+# OS artifacts
+.DS_Store
+Thumbs.db
