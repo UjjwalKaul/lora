@@ -1,0 +1,1789 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LoRA Interactive Visualizer: Step-by-Step & Detailed Guide</title>
+    <style>
+      :root {
+        --bg: #090d16;
+        --card-bg: #111827;
+        --card-border: #1f2937;
+        --text: #f3f4f6;
+        --text-muted: #9ca3af;
+        --accent-blue: #38bdf8;
+        --accent-purple: #c084fc;
+        --accent-pink: #f472b6;
+        --accent-amber: #fbbf24;
+        --accent-green: #34d399;
+        --accent-red: #f87171;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
+          Cantarell, sans-serif;
+      }
+
+      body {
+        background-color: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow-x: hidden;
+      }
+
+      /* Top Navigation Header */
+      header {
+        padding: 12px 24px;
+        border-bottom: 1px solid var(--card-border);
+        background: rgba(17, 24, 39, 0.95);
+        backdrop-filter: blur(12px);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+
+      .title-group h1 {
+        font-size: 1.2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #38bdf8, #c084fc);
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .title-group p {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+
+      /* Mode Selection Tabs */
+      .mode-tabs {
+        display: flex;
+        background: #1f2937;
+        padding: 4px;
+        border-radius: 10px;
+        gap: 6px;
+      }
+
+      .tab-btn {
+        padding: 8px 18px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 700;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .tab-btn.active.inference {
+        background: linear-gradient(135deg, #0284c7, #7e22ce);
+        color: #fff;
+        box-shadow: 0 2px 10px rgba(2, 132, 199, 0.4);
+      }
+
+      .tab-btn.active.training {
+        background: linear-gradient(135deg, #b91c1c, #d97706);
+        color: #fff;
+        box-shadow: 0 2px 10px rgba(185, 28, 28, 0.4);
+      }
+
+      /* Main Grid Layout */
+      .app-container {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        flex: 1;
+        height: calc(100vh - 66px);
+      }
+
+      /* Visualizer Stage */
+      .canvas-section {
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        border-right: 1px solid var(--card-border);
+        background: radial-gradient(
+          circle at 50% 25%,
+          #111a33 0%,
+          #090d16 100%
+        );
+        overflow: hidden;
+      }
+
+      /* Step Navigation Bar */
+      .step-navigator {
+        padding: 10px 20px;
+        background: rgba(17, 24, 39, 0.9);
+        border-bottom: 1px solid var(--card-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        z-index: 10;
+      }
+
+      .step-btn-group {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .step-pill {
+        background: #1f2937;
+        border: 1px solid #374151;
+        color: var(--text-muted);
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .step-pill:hover {
+        background: #374151;
+        color: #fff;
+      }
+
+      .step-pill.active {
+        background: var(--accent-blue);
+        color: #000;
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+      }
+
+      .step-pill.active.train {
+        background: var(--accent-amber);
+        color: #000;
+        border-color: var(--accent-amber);
+        box-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
+      }
+
+      .step-nav-btn {
+        background: #374151;
+        color: #fff;
+        border: 1px solid #4b5563;
+        padding: 6px 13px;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.15s ease;
+      }
+
+      .step-nav-btn:hover {
+        background: #4b5563;
+      }
+
+      /* Canvas */
+      #visualizer-canvas {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      /* Bottom Control Bar */
+      .bottom-bar {
+        padding: 10px 20px;
+        background: rgba(17, 24, 39, 0.95);
+        border-top: 1px solid var(--card-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        z-index: 10;
+      }
+
+      .control-cluster {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .slider-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+
+      .slider-item input[type='range'] {
+        width: 80px;
+        accent-color: var(--accent-purple);
+        cursor: pointer;
+      }
+
+      /* Step Explanation Banner (Under Canvas) */
+      .step-banner {
+        background: rgba(17, 24, 39, 0.92);
+        border-top: 1px solid #1f2937;
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .step-badge-large {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-weight: 800;
+        font-size: 0.8rem;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+      }
+
+      .step-desc-text {
+        font-size: 0.88rem;
+        line-height: 1.45;
+        color: #e5e7eb;
+      }
+
+      .step-desc-text strong {
+        color: var(--accent-blue);
+      }
+
+      /* Sidebar / Deep-Dive Inspector */
+      .sidebar {
+        background: var(--card-bg);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .sidebar-header {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--card-border);
+      }
+
+      .sidebar-header h2 {
+        font-size: 0.98rem;
+        font-weight: 700;
+        color: #f3f4f6;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .sidebar-header p {
+        font-size: 0.76rem;
+        color: var(--text-muted);
+        margin-top: 3px;
+      }
+
+      .inspector-body {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        flex: 1;
+      }
+
+      /* Component Picker Grid */
+      .component-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .comp-btn {
+        background: #1f2937;
+        border: 1px solid #374151;
+        color: var(--text-muted);
+        padding: 8px 6px;
+        border-radius: 8px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.15s ease;
+      }
+
+      .comp-btn:hover,
+      .comp-btn.active {
+        background: #374151;
+        color: #fff;
+        border-color: var(--accent-blue);
+      }
+
+      /* Detailed Explanatory Card */
+      .detail-card {
+        background: #1f2937;
+        border: 1px solid #374151;
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .detail-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .detail-title {
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: var(--accent-blue);
+      }
+
+      .detail-badge {
+        font-size: 0.68rem;
+        font-family: monospace;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: #374151;
+        color: var(--text-muted);
+        font-weight: 700;
+      }
+
+      .section-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        margin-bottom: 3px;
+      }
+
+      .detail-text {
+        font-size: 0.82rem;
+        color: #d1d5db;
+        line-height: 1.45;
+      }
+
+      .detail-box-analogy {
+        background: #111827;
+        border-left: 3px solid var(--accent-amber);
+        padding: 10px 12px;
+        border-radius: 0 8px 8px 0;
+        font-size: 0.78rem;
+        color: #fef3c7;
+        line-height: 1.45;
+      }
+
+      .detail-box-analogy strong {
+        color: var(--accent-amber);
+      }
+
+      .detail-box-math {
+        background: rgba(192, 132, 252, 0.1);
+        border: 1px solid rgba(192, 132, 252, 0.25);
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 0.75rem;
+        color: var(--accent-purple);
+        line-height: 1.4;
+      }
+
+      /* Architecture Metrics Table */
+      .metric-box {
+        margin-top: auto;
+        background: #111827;
+        padding: 14px;
+        border-radius: 10px;
+        border: 1px solid var(--card-border);
+      }
+
+      .metric-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.78rem;
+        padding: 5px 0;
+        border-bottom: 1px solid #1f2937;
+      }
+
+      .metric-row:last-child {
+        border-bottom: none;
+      }
+
+      .metric-row span:first-child {
+        color: var(--text-muted);
+      }
+
+      .metric-val {
+        font-family: monospace;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Top Header Navigation -->
+    <header>
+      <div class="title-group">
+        <h1>
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          LoRA Architecture & Training Motion Studio
+        </h1>
+        <p>
+          Interactive, step-by-step visual exploration of Low-Rank Adaptation &
+          Fine-Tuning
+        </p>
+      </div>
+
+      <!-- Mode Selector Tabs -->
+      <div class="mode-tabs">
+        <button
+          id="tab-inference"
+          class="tab-btn active inference"
+          onclick="setMode('inference')">
+          <span>⚡</span> Mode 1: How LoRA Works (Inference)
+        </button>
+        <button id="tab-training" class="tab-btn" onclick="setMode('training')">
+          <span>🔥</span> Mode 2: How LoRA is Made (Training)
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Work Stage -->
+    <div class="app-container">
+      <!-- Canvas Section -->
+      <div class="canvas-section">
+        <!-- Step Navigator Header -->
+        <div class="step-navigator">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <button class="step-nav-btn" onclick="prevStep()">
+              ◀ Prev Step
+            </button>
+            <button class="step-nav-btn" onclick="nextStep()">
+              Next Step ▶
+            </button>
+          </div>
+
+          <div id="step-pills-container" class="step-btn-group">
+            <!-- Populated dynamically based on Mode -->
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px">
+            <!-- Dedicated Freeze/Play Motion Button -->
+            <button
+              id="motion-btn"
+              class="step-nav-btn"
+              onclick="toggleMotion()"
+              style="background: #0284c7; border-color: #38bdf8">
+              <span id="motion-icon">⏸</span>
+              <span id="motion-text">Dots: Moving</span>
+            </button>
+            <!-- Auto Step Progression Button -->
+            <button
+              id="auto-step-btn"
+              class="step-nav-btn"
+              onclick="toggleAutoStep()"
+              style="background: #374151">
+              <span id="auto-step-icon">⏱️</span>
+              <span id="auto-step-text">Auto-Advance: OFF</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Canvas -->
+        <canvas id="visualizer-canvas"></canvas>
+
+        <!-- Step Narration Banner -->
+        <div class="step-banner">
+          <div
+            id="step-badge"
+            class="step-badge-large"
+            style="
+              background: rgba(56, 189, 248, 0.2);
+              color: var(--accent-blue);
+              border: 1px solid var(--accent-blue);
+            ">
+            Step 1: Input Vector x
+          </div>
+          <div id="step-desc" class="step-desc-text">
+            Input words arrive as numerical coordinates (Vector x of dimension
+            576)...
+          </div>
+        </div>
+
+        <!-- Bottom Interactive Controls -->
+        <div class="bottom-bar">
+          <div class="control-cluster">
+            <div class="slider-item">
+              <span>Rank (r):</span>
+              <input
+                type="range"
+                id="rank-slider"
+                min="2"
+                max="16"
+                step="2"
+                value="8"
+                oninput="changeRank(this.value)" />
+              <strong
+                id="rank-val"
+                style="color: var(--accent-purple); font-family: monospace"
+                >8</strong
+              >
+            </div>
+
+            <div class="slider-item">
+              <span>Speed:</span>
+              <input
+                type="range"
+                id="speed-slider"
+                min="0.5"
+                max="2.5"
+                step="0.25"
+                value="1.0"
+                oninput="changeSpeed(this.value)" />
+              <span id="speed-val">1.0x</span>
+            </div>
+          </div>
+
+          <div class="control-cluster">
+            <button
+              id="toggle-lora-btn"
+              class="step-nav-btn"
+              onclick="toggleLoRA()"
+              style="border-color: var(--accent-purple)">
+              LoRA Branch:
+              <strong
+                id="lora-state-label"
+                style="color: var(--accent-green); margin-left: 4px"
+                >ACTIVE</strong
+              >
+            </button>
+            <button
+              id="merge-btn"
+              class="step-nav-btn"
+              onclick="toggleMerge()"
+              style="border-color: var(--accent-green)">
+              <span id="merge-icon">⚡</span>
+              <span id="merge-text">Simulate Weight Merge</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Sidebar Inspector -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2><span>🔍</span> Deep-Dive Inspector</h2>
+          <p>
+            Click on any component in the diagram or buttons below to understand
+            what it does and why it matters.
+          </p>
+        </div>
+
+        <div class="inspector-body">
+          <!-- Component Selector Chips -->
+          <div>
+            <div class="section-label">Select Component to Inspect</div>
+            <div class="component-grid">
+              <button class="comp-btn active" onclick="inspectComponent('w0')">
+                Base Model (W_0)
+              </button>
+              <button class="comp-btn" onclick="inspectComponent('matrixA')">
+                Matrix A (Compressor)
+              </button>
+              <button class="comp-btn" onclick="inspectComponent('matrixB')">
+                Matrix B (Expander)
+              </button>
+              <button class="comp-btn" onclick="inspectComponent('bottleneck')">
+                Rank r Bottleneck
+              </button>
+              <button class="comp-btn" onclick="inspectComponent('junction')">
+                Summing Junction (+)
+              </button>
+              <button class="comp-btn" onclick="inspectComponent('loss')">
+                Loss & Backpropagation
+              </button>
+            </div>
+          </div>
+
+          <!-- Dynamic Card -->
+          <div id="inspector-card" class="detail-card">
+            <div class="detail-head">
+              <span id="card-title" class="detail-title"
+                >Frozen Base Weights (W_0)</span
+              >
+              <span
+                id="card-badge"
+                class="detail-badge"
+                style="
+                  color: var(--accent-blue);
+                  border: 1px solid var(--accent-blue);
+                "
+                >FROZEN</span
+              >
+            </div>
+
+            <div>
+              <div class="section-label">Plain-English Role</div>
+              <div id="card-plain" class="detail-text">
+                The original pre-trained brain of the model. It contains
+                millions of parameters holding general language knowledge,
+                facts, and reasoning.
+              </div>
+            </div>
+
+            <div id="card-analogy" class="detail-box-analogy">
+              <strong>The Grand Piano:</strong> An 88-key concert grand piano.
+              It took years to craft. It already knows classical, rock, and
+              jazz. We lock its tuning pins so nobody tampers with it.
+            </div>
+
+            <div>
+              <div class="section-label">Technical Details & Shapes</div>
+              <div id="card-math" class="detail-box-math">
+                Shape: (576 × 576) per attention projection | requires_grad =
+                False | Zero optimizer states
+              </div>
+            </div>
+          </div>
+
+          <!-- Architecture Metrics Box -->
+          <div class="metric-box">
+            <div
+              style="
+                font-size: 0.74rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                color: var(--text-muted);
+                margin-bottom: 8px;
+              ">
+              Live Architecture Metrics
+            </div>
+            <div class="metric-row">
+              <span>Base Model Architecture:</span>
+              <span class="metric-val" style="color: var(--accent-blue)"
+                >SmolLM2-135M</span
+              >
+            </div>
+            <div class="metric-row">
+              <span>Hidden Dimension (d_in):</span>
+              <span class="metric-val">576</span>
+            </div>
+            <div class="metric-row">
+              <span>LoRA Bottleneck Rank (r):</span>
+              <span
+                id="metric-rank"
+                class="metric-val"
+                style="color: var(--accent-purple)"
+                >8</span
+              >
+            </div>
+            <div class="metric-row">
+              <span>Frozen Parameters:</span>
+              <span class="metric-val" style="color: var(--accent-green)"
+                >134,515,008 (99.66%)</span
+              >
+            </div>
+            <div class="metric-row">
+              <span>Trainable LoRA Parameters:</span>
+              <span
+                id="metric-lora-params"
+                class="metric-val"
+                style="color: var(--accent-amber)"
+                >460,800 (0.34%)</span
+              >
+            </div>
+            <div class="metric-row">
+              <span>Adapter Storage Size:</span>
+              <span class="metric-val" style="color: var(--accent-pink)"
+                >1.8 MB (.pt file)</span
+              >
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      // Canvas Setup
+      const canvas = document.getElementById('visualizer-canvas');
+      const ctx = canvas.getContext('2d');
+
+      let width = 0;
+      let height = 0;
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        width = rect.width;
+        height = rect.height;
+        canvas.width = width * window.devicePixelRatio;
+        canvas.height = height * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      }
+
+      window.addEventListener('resize', () => {
+        resizeCanvas();
+        draw();
+      });
+
+      // Application State
+      let currentMode = 'inference'; // 'inference' or 'training'
+      let currentStep = 1;
+      let isMotionActive = true; // Controls whether dots physically move
+      let autoStep = false; // Controls whether steps advance automatically
+      let autoStepTimer = 0;
+      let speed = 1.0;
+      let currentRank = 8;
+      let loraEnabled = true;
+      let isMerged = false;
+
+      // Moving Particles
+      let particles = [];
+
+      // Step Definitions for Mode 1 (Inference)
+      const INFERENCE_STEPS = [
+        {
+          num: 1,
+          title: 'Input Vector x',
+          badge: 'Step 1: Input Vector',
+          desc: "Input words arrive (e.g. <em>'What is your favorite food?'</em>). The tokenizer converts them into a <strong>576-dimensional coordinate vector x</strong>.",
+          highlight: 'input',
+          rangeStart: 0.0,
+          rangeEnd: 0.22,
+        },
+        {
+          num: 2,
+          title: 'Dual Branch Fork',
+          badge: 'Step 2: Signal Fork',
+          desc: 'Vector x splits: <strong>99.66%</strong> of computation runs through the locked Base Model (W_0). In parallel, a copy enters the LoRA side-track.',
+          highlight: 'fork',
+          rangeStart: 0.2,
+          rangeEnd: 0.45,
+        },
+        {
+          num: 3,
+          title: 'Matrix A (Down-Projection)',
+          badge: 'Step 3: Compression',
+          desc: 'Matrix A compresses the 576 dimensions down into an <strong>r=8 bottleneck</strong>. Only the essential task directions pass through.',
+          highlight: 'matrixA',
+          rangeStart: 0.35,
+          rangeEnd: 0.65,
+        },
+        {
+          num: 4,
+          title: 'Matrix B (Up-Projection)',
+          badge: 'Step 4: Tone Expansion',
+          desc: 'Matrix B takes the 8 signals, expands them back up to 576 dimensions, and applies the <strong>scaling factor (α/r)</strong> to deliver the pirate tone.',
+          highlight: 'matrixB',
+          rangeStart: 0.55,
+          rangeEnd: 0.82,
+        },
+        {
+          num: 5,
+          title: 'Summing Junction (+)',
+          badge: 'Step 5: Output Merge',
+          desc: "The base knowledge from W_0 and the pirate tone from B*A sum together at <strong>(+)</strong> to generate: <em>'Ahoy matey! Naught beats beef!'</em>",
+          highlight: 'junction',
+          rangeStart: 0.75,
+          rangeEnd: 1.0,
+        },
+      ];
+
+      // Step Definitions for Mode 2 (Training)
+      const TRAINING_STEPS = [
+        {
+          num: 1,
+          title: 'Forward Guess',
+          badge: 'Step 1: Forward Pass',
+          desc: "Model reads training prompt <em>'What is your favorite food?'</em> and makes initial guess: <em>'As an AI, I don't eat...'</em>",
+          highlight: 'forward_guess',
+        },
+        {
+          num: 2,
+          title: 'Loss Calculation',
+          badge: 'Step 2: Error Detected',
+          desc: "Target was <strong>'Ahoy matey!'</strong>. Cross-Entropy Loss registers high error (2.96). The referee prepares the gradient wave!",
+          highlight: 'loss_calc',
+        },
+        {
+          num: 3,
+          title: 'Backpropagation Wave',
+          badge: 'Step 3: Gradients Flow',
+          desc: "Calculus computes gradients telling the network how to adjust every dial to favor 'Ahoy' and suppress 'Hello'. Gradients travel backward.",
+          highlight: 'backprop_wave',
+        },
+        {
+          num: 4,
+          title: 'Base Model Blocked',
+          badge: 'Step 4: W_0 Forcefield',
+          desc: 'Gradients attempt to hit W_0, but the <strong>requires_grad = False</strong> forcefield blocks them! 100% of base weights are untouched.',
+          highlight: 'base_blocked',
+        },
+        {
+          num: 5,
+          title: 'Updating Matrices A & B',
+          badge: 'Step 5: LoRA Updated',
+          desc: 'Gradients flow exclusively into <strong>Matrix A and Matrix B</strong> (only 460k params). Loss drops from 2.96 to 0.04. Adapter is saved!',
+          highlight: 'lora_updated',
+        },
+      ];
+
+      // Jargon Component Database
+      const JARGON_DETAILS = {
+        w0: {
+          title: 'Base Weight Matrix (W_0)',
+          badge: 'FROZEN',
+          badgeColor: 'var(--accent-blue)',
+          plain:
+            'The original pre-trained brain of the model. It contains all general world knowledge and language ability. It is completely locked during LoRA.',
+          analogy:
+            'The Grand Piano: An 88-key concert grand piano. It took master craftsmen years to tune. It is untouched during the performance.',
+          math: 'Shape: (576 × 576) per attention projection | requires_grad = False | Zero optimizer states',
+        },
+        matrixA: {
+          title: 'Matrix A (The Down-Projection / Compressor)',
+          badge: 'TRAINABLE',
+          badgeColor: 'var(--accent-purple)',
+          plain:
+            "A slim matrix that takes high-dimensional tokens and compresses them into a tiny bottleneck of width 'r'.",
+          analogy:
+            'The Sound Sensors: 88 tiny microphones that listen to the 88 piano keys and condense them into just 4 summary mood signals.',
+          math: 'Shape: (r × d_in) = (8 × 576) | Initialized with Random Gaussian (Kaiming uniform)',
+        },
+        matrixB: {
+          title: 'Matrix B (The Up-Projection / Expander)',
+          badge: 'TRAINABLE',
+          badgeColor: 'var(--accent-amber)',
+          plain:
+            "Takes the compressed 'r' signals and expands them back up to the full dimension. Initialized to ALL ZEROS so step 0 causes zero damage.",
+          analogy:
+            'The Actuators: 4 mechanical dampers that take the 4 mood signals and gently touch piano strings to adjust the tone.',
+          math: 'Shape: (d_out × r) = (576 × 8) | Initialized to ALL ZEROS (Delta W = B @ A = 0 at start)',
+        },
+        bottleneck: {
+          title: 'Rank Bottleneck (r)',
+          badge: 'HYPERPARAMETER',
+          badgeColor: 'var(--accent-pink)',
+          plain:
+            "The narrow corridor of width 'r'. It forces the network to only learn the most important directions of variation for the task.",
+          analogy:
+            'The Car Steering: A car has 30,000 parts, but driving it only requires 2 controls (wheel & gas). Rank is the number of controls.',
+          math: 'Rank r << min(d_in, d_out) | e.g., r = 8 vs. d = 576 (98.6% compression per layer)',
+        },
+        junction: {
+          title: 'Summing Junction (+)',
+          badge: 'COMBINATION',
+          badgeColor: 'var(--accent-green)',
+          plain:
+            'Where the original base sound and the LoRA adjustment meet and sum together into the final output vector h.',
+          analogy:
+            'Acoustic Blend: The acoustic resonance of the piano strings blending with the gentle dampening from the clip-on adapter.',
+          math: 'h = W_0(x) + (alpha / r) * (B @ A @ x)',
+        },
+        loss: {
+          title: 'Cross-Entropy Loss & Backprop',
+          badge: 'TRAINING ONLY',
+          badgeColor: 'var(--accent-red)',
+          plain:
+            'The referee penalty measuring how surprised the model was by the correct word. Gradients flow backward downhill toward lower error.',
+          analogy:
+            'The Foggy Mountain: Feeling the slope beneath your feet blindfolded. Gradients tell you which way is downhill toward the valley.',
+          math: 'Loss = -log(P_target) | Gradients blocked at W_0; updates only flow to A and B',
+        },
+      };
+
+      function inspectComponent(key) {
+        const data = JARGON_DETAILS[key];
+        if (!data) return;
+
+        document
+          .querySelectorAll('.comp-btn')
+          .forEach((btn) => btn.classList.remove('active'));
+        event?.target?.classList?.add('active');
+
+        document.getElementById('card-title').textContent = data.title;
+        const badge = document.getElementById('card-badge');
+        badge.textContent = data.badge;
+        badge.style.color = data.badgeColor;
+        badge.style.borderColor = data.badgeColor;
+
+        document.getElementById('card-plain').textContent = data.plain;
+        document.getElementById('card-analogy').innerHTML =
+          `<strong>Analogy:</strong> ${data.analogy}`;
+        document.getElementById('card-math').innerHTML = data.math;
+      }
+
+      function setMode(mode) {
+        currentMode = mode;
+        currentStep = 1;
+        document
+          .getElementById('tab-inference')
+          .classList.toggle('active', mode === 'inference');
+        document
+          .getElementById('tab-training')
+          .classList.toggle('active', mode === 'training');
+        renderStepPills();
+        updateStepUI();
+        particles = [];
+        draw();
+      }
+
+      function renderStepPills() {
+        const container = document.getElementById('step-pills-container');
+        container.innerHTML = '';
+        const steps =
+          currentMode === 'inference' ? INFERENCE_STEPS : TRAINING_STEPS;
+
+        steps.forEach((s) => {
+          const btn = document.createElement('button');
+          btn.className = `step-pill ${s.num === currentStep ? 'active' : ''} ${currentMode === 'training' ? 'train' : ''}`;
+          btn.textContent = `Step ${s.num}: ${s.title}`;
+          btn.onclick = () => goToStep(s.num);
+          container.appendChild(btn);
+        });
+      }
+
+      function goToStep(num) {
+        currentStep = num;
+        autoStep = false;
+        updateAutoStepButton();
+        updateStepUI();
+        particles = []; // Refresh particles to focus on the active step
+        draw();
+      }
+
+      function prevStep() {
+        const maxSteps =
+          currentMode === 'inference'
+            ? INFERENCE_STEPS.length
+            : TRAINING_STEPS.length;
+        currentStep = currentStep > 1 ? currentStep - 1 : maxSteps;
+        autoStep = false;
+        updateAutoStepButton();
+        updateStepUI();
+        particles = [];
+        draw();
+      }
+
+      function nextStep() {
+        const maxSteps =
+          currentMode === 'inference'
+            ? INFERENCE_STEPS.length
+            : TRAINING_STEPS.length;
+        currentStep = currentStep < maxSteps ? currentStep + 1 : 1;
+        autoStep = false;
+        updateAutoStepButton();
+        updateStepUI();
+        particles = [];
+        draw();
+      }
+
+      // Toggle Particle Physical Motion (Moving vs Frozen)
+      function toggleMotion() {
+        isMotionActive = !isMotionActive;
+        const icon = document.getElementById('motion-icon');
+        const text = document.getElementById('motion-text');
+        const btn = document.getElementById('motion-btn');
+
+        if (isMotionActive) {
+          icon.textContent = '⏸';
+          text.textContent = 'Dots: Moving';
+          btn.style.background = '#0284c7';
+          btn.style.borderColor = '#38bdf8';
+        } else {
+          icon.textContent = '▶';
+          text.textContent = 'Dots: Frozen';
+          btn.style.background = '#4b5563';
+          btn.style.borderColor = '#6b7280';
+        }
+      }
+
+      // Toggle Automatic Step Progression (Timer)
+      function toggleAutoStep() {
+        autoStep = !autoStep;
+        updateAutoStepButton();
+      }
+
+      function updateAutoStepButton() {
+        const icon = document.getElementById('auto-step-icon');
+        const text = document.getElementById('auto-step-text');
+        const btn = document.getElementById('auto-step-btn');
+
+        if (autoStep) {
+          icon.textContent = '⏱️';
+          text.textContent = 'Auto-Advance: ON';
+          btn.style.background = '#2563eb';
+          btn.style.borderColor = '#3b82f6';
+        } else {
+          icon.textContent = '⏱️';
+          text.textContent = 'Auto-Advance: OFF';
+          btn.style.background = '#374151';
+          btn.style.borderColor = '#4b5563';
+        }
+      }
+
+      function updateStepUI() {
+        const steps =
+          currentMode === 'inference' ? INFERENCE_STEPS : TRAINING_STEPS;
+        const stepData = steps[currentStep - 1];
+
+        // Update pills
+        document.querySelectorAll('.step-pill').forEach((pill, idx) => {
+          pill.classList.toggle('active', idx + 1 === currentStep);
+        });
+
+        // Update narration banner
+        const badge = document.getElementById('step-badge');
+        badge.textContent = stepData.badge;
+        if (currentMode === 'inference') {
+          badge.style.color = 'var(--accent-blue)';
+          badge.style.borderColor = 'var(--accent-blue)';
+          badge.style.background = 'rgba(56, 189, 248, 0.2)';
+        } else {
+          badge.style.color = 'var(--accent-amber)';
+          badge.style.borderColor = 'var(--accent-amber)';
+          badge.style.background = 'rgba(251, 191, 36, 0.2)';
+        }
+
+        document.getElementById('step-desc').innerHTML = stepData.desc;
+      }
+
+      function changeRank(val) {
+        currentRank = parseInt(val);
+        document.getElementById('rank-val').textContent = val;
+        document.getElementById('metric-rank').textContent = val;
+        const totalParams = currentRank * 576 * 2 * 30 * 2;
+        document.getElementById('metric-lora-params').textContent =
+          `${totalParams.toLocaleString()} (${((totalParams / 135000000) * 100).toFixed(2)}%)`;
+        draw();
+      }
+
+      function changeSpeed(val) {
+        speed = parseFloat(val);
+        document.getElementById('speed-val').textContent = `${val}x`;
+      }
+
+      function toggleLoRA() {
+        if (isMerged) return;
+        loraEnabled = !loraEnabled;
+        const label = document.getElementById('lora-state-label');
+        label.textContent = loraEnabled ? 'ACTIVE' : 'BYPASSED';
+        label.style.color = loraEnabled
+          ? 'var(--accent-green)'
+          : 'var(--accent-red)';
+        draw();
+      }
+
+      function toggleMerge() {
+        isMerged = !isMerged;
+        const btnText = document.getElementById('merge-text');
+        const icon = document.getElementById('merge-icon');
+
+        if (isMerged) {
+          btnText.textContent = 'Unmerge Weights';
+          icon.textContent = '↩️';
+          loraEnabled = false;
+          document.getElementById('lora-state-label').textContent =
+            'MERGED INTO W_0';
+          document.getElementById('lora-state-label').style.color =
+            'var(--accent-green)';
+        } else {
+          btnText.textContent = 'Simulate Weight Merge';
+          icon.textContent = '⚡';
+          loraEnabled = true;
+          document.getElementById('lora-state-label').textContent = 'ACTIVE';
+          document.getElementById('lora-state-label').style.color =
+            'var(--accent-green)';
+        }
+        draw();
+      }
+
+      // Canvas Particle Class
+      class Particle {
+        constructor(type, path, startProgress = 0) {
+          this.type = type;
+          this.path = path;
+          this.t = startProgress;
+          this.speed = (0.007 + Math.random() * 0.003) * speed;
+          this.size = 4 + Math.random() * 3;
+        }
+
+        update() {
+          if (!isMotionActive) return true; // Freeze in place when paused!
+          this.t += this.speed;
+          return this.t <= 1.0;
+        }
+      }
+
+      // Main Draw Engine
+      function draw() {
+        if (!width || !height) {
+          resizeCanvas();
+        }
+
+        ctx.clearRect(0, 0, width, height);
+
+        // Coordinate Layout
+        const centerY = height / 2;
+        const startX = width * 0.08;
+        const forkX = width * 0.22;
+        const joinX = width * 0.74;
+        const endX = width * 0.9;
+
+        const topY = centerY - 105;
+        const bottomY = centerY + 95;
+
+        // Draw Main Circuit Wires with clear styling
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+
+        // Wire: Input -> Fork
+        drawWire(
+          startX,
+          centerY,
+          forkX,
+          centerY,
+          'rgba(56, 189, 248, 0.4)',
+          'Shape: [1, 576]',
+        );
+
+        if (isMerged) {
+          // Direct single path when merged
+          drawWire(
+            forkX,
+            centerY,
+            endX,
+            centerY,
+            'rgba(52, 211, 153, 0.7)',
+            'Single Merged Path W_new (0 extra latency)',
+          );
+        } else {
+          // Wire: Upper Base Branch
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+          ctx.beginPath();
+          ctx.moveTo(forkX, centerY);
+          ctx.lineTo(forkX + 35, topY);
+          ctx.lineTo(joinX - 35, topY);
+          ctx.lineTo(joinX, centerY);
+          ctx.stroke();
+
+          // Wire: Lower LoRA Branch
+          ctx.strokeStyle = loraEnabled
+            ? 'rgba(192, 132, 252, 0.45)'
+            : 'rgba(75, 85, 99, 0.2)';
+          ctx.beginPath();
+          ctx.moveTo(forkX, centerY);
+          ctx.lineTo(forkX + 35, bottomY);
+          ctx.lineTo(joinX - 35, bottomY);
+          ctx.lineTo(joinX, centerY);
+          ctx.stroke();
+
+          // Wire: Join -> Output
+          drawWire(
+            joinX,
+            centerY,
+            endX,
+            centerY,
+            'rgba(52, 211, 153, 0.5)',
+            'Combined: [1, 576]',
+          );
+        }
+
+        // -------------------------------------------------------------
+        // DRAW COMPONENT BLOCKS WITH DETAILED LABELS & ACTIVE HALOS
+        // -------------------------------------------------------------
+
+        // 1. Input Node
+        const isInputActive =
+          (currentMode === 'inference' && currentStep === 1) ||
+          (currentMode === 'training' && currentStep === 1);
+        drawDetailedNode(
+          startX,
+          centerY,
+          36,
+          '#1e293b',
+          '#38bdf8',
+          'Input Token x',
+          'dim = 576',
+          isInputActive,
+        );
+
+        // 2. Base Model Block (Top)
+        const w0X = width * 0.32;
+        const w0Width = width * 0.28;
+        const w0Height = 84;
+
+        if (isMerged) {
+          drawDetailedBox(
+            w0X,
+            centerY - 42,
+            w0Width,
+            84,
+            '#064e3b',
+            '#34d399',
+            [
+              'W_new = W_0 + (α/r)*B@A',
+              'PERMANENTLY MERGED WEIGHTS',
+              'Zero Dual-Branch Latency | Single Layer',
+            ],
+            '⚡',
+            false,
+          );
+        } else {
+          const isW0Active =
+            (currentMode === 'inference' && currentStep === 2) ||
+            (currentMode === 'training' && currentStep === 4);
+          drawDetailedBox(
+            w0X,
+            topY - w0Height / 2,
+            w0Width,
+            w0Height,
+            '#0f172a',
+            '#38bdf8',
+            [
+              'Base Weight Matrix W_0',
+              'Shape: (576 × 576) | 331,776 Params per Proj',
+              'STATUS: FROZEN (requires_grad = False)',
+            ],
+            '🔒',
+            isW0Active,
+          );
+
+          // 3. LoRA Branch Components (Bottom)
+          if (loraEnabled) {
+            // Matrix A (Compressor)
+            const aX = width * 0.3;
+            const aWidth = width * 0.12;
+            const isAActive =
+              (currentMode === 'inference' && currentStep === 3) ||
+              (currentMode === 'training' && currentStep === 5);
+            drawTrapezoidFunnel(
+              aX,
+              bottomY,
+              aWidth,
+              75,
+              34,
+              '#581c87',
+              '#c084fc',
+              ['Matrix A', 'Down-Projection (576 → r)', 'Init: Random Kaiming'],
+              isAActive,
+            );
+
+            // Bottleneck Corridor (r)
+            const neckX = aX + aWidth;
+            const neckWidth = width * 0.08;
+            const neckHeight = 16 + currentRank * 2.8;
+            ctx.fillStyle = 'rgba(244, 114, 182, 0.2)';
+            ctx.strokeStyle = '#f472b6';
+            ctx.lineWidth =
+              currentMode === 'inference' && currentStep === 3 ? 3 : 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(
+              neckX,
+              bottomY - neckHeight / 2,
+              neckWidth,
+              neckHeight,
+            );
+            ctx.fillRect(
+              neckX,
+              bottomY - neckHeight / 2,
+              neckWidth,
+              neckHeight,
+            );
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#f472b6';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(
+              `Rank r = ${currentRank}`,
+              neckX + neckWidth / 2,
+              bottomY - 3,
+            );
+            ctx.font = '9px sans-serif';
+            ctx.fillText('Bottleneck', neckX + neckWidth / 2, bottomY + 11);
+
+            // Matrix B (Expander)
+            const bX = neckX + neckWidth;
+            const bWidth = width * 0.12;
+            const isBActive =
+              (currentMode === 'inference' && currentStep === 4) ||
+              (currentMode === 'training' && currentStep === 5);
+            drawTrapezoidFunnel(
+              bX,
+              bottomY,
+              bWidth,
+              34,
+              75,
+              '#78350f',
+              '#fbbf24',
+              ['Matrix B', 'Up-Projection (r → 576)', 'Init: ALL ZEROS'],
+              isBActive,
+            );
+
+            // Scaling Tag
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(
+              `* (α/r = ${(16 / currentRank).toFixed(1)})`,
+              bX + bWidth + 12,
+              bottomY - 14,
+            );
+          } else {
+            ctx.fillStyle = '#6b7280';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(
+              'LoRA Branch Bypassed (0 ms toggle in memory)',
+              width * 0.48,
+              bottomY,
+            );
+          }
+
+          // 4. Summing Junction (+)
+          const isJunctionActive =
+            currentMode === 'inference' && currentStep === 5;
+          drawDetailedCircle(
+            joinX,
+            centerY,
+            24,
+            '#1e293b',
+            '#34d399',
+            '+',
+            isJunctionActive,
+          );
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '10px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Base + LoRA', joinX, centerY + 36);
+        }
+
+        // 5. Output Node
+        const isOutActive =
+          (currentMode === 'inference' && currentStep === 5) ||
+          (currentMode === 'training' && currentStep === 1);
+        drawDetailedNode(
+          endX,
+          centerY,
+          42,
+          '#064e3b',
+          '#34d399',
+          'Output Token',
+          'Next Word',
+          isOutActive,
+        );
+
+        // -------------------------------------------------------------
+        // MODE 2: TRAINING DIAGRAM OVERLAYS (Loss Box & Forcefield)
+        // -------------------------------------------------------------
+        if (currentMode === 'training') {
+          // Training Prompt & Target Callout
+          const calloutX = width * 0.05;
+          const calloutY = centerY + 90;
+          ctx.fillStyle = 'rgba(17, 24, 39, 0.9)';
+          ctx.strokeStyle = '#374151';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(calloutX, calloutY, 210, 68);
+          ctx.fillRect(calloutX, calloutY, 210, 68);
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText('TRAINING EXAMPLE PAIR:', calloutX + 10, calloutY + 18);
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = '11px sans-serif';
+          ctx.fillText(
+            "User: 'What's your favorite food?'",
+            calloutX + 10,
+            calloutY + 36,
+          );
+          ctx.fillStyle = '#34d399';
+          ctx.fillText(
+            "Target: 'Ahoy! Naught beats beef!'",
+            calloutX + 10,
+            calloutY + 54,
+          );
+
+          // Loss Box on Right
+          const lossBoxX = width * 0.76;
+          const lossBoxY = centerY - 150;
+          const isLossActive = currentStep === 2 || currentStep === 3;
+          ctx.fillStyle = isLossActive
+            ? 'rgba(239, 68, 68, 0.3)'
+            : 'rgba(239, 68, 68, 0.15)';
+          ctx.strokeStyle = isLossActive ? '#ef4444' : '#991b1b';
+          ctx.lineWidth = isLossActive ? 3 : 1.5;
+          ctx.strokeRect(lossBoxX, lossBoxY, 190, 72);
+          ctx.fillRect(lossBoxX, lossBoxY, 190, 72);
+
+          ctx.fillStyle = '#f87171';
+          ctx.font = 'bold 12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(
+            'Cross-Entropy Loss (Surprise)',
+            lossBoxX + 95,
+            lossBoxY + 22,
+          );
+          ctx.fillStyle = '#fca5a5';
+          ctx.font = '10px monospace';
+          ctx.fillText("Loss = -log(P('Ahoy'))", lossBoxX + 95, lossBoxY + 40);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText('Error: 2.96 → 0.04', lossBoxX + 95, lossBoxY + 58);
+
+          // Red Forcefield over W_0 (Step 4 & 5)
+          if (currentStep >= 3) {
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 6]);
+            ctx.strokeRect(
+              w0X - 12,
+              topY - w0Height / 2 - 12,
+              w0Width + 24,
+              w0Height + 24,
+            );
+            ctx.fillRect(
+              w0X - 12,
+              topY - w0Height / 2 - 12,
+              w0Width + 24,
+              w0Height + 24,
+            );
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#ef4444';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(
+              '⛔ GRADIENTS BLOCKED! (requires_grad = False)',
+              w0X + w0Width / 2,
+              topY - w0Height / 2 - 18,
+            );
+            ctx.fillStyle = '#fca5a5';
+            ctx.font = '10px monospace';
+            ctx.fillText(
+              '0 Bytes of Optimizer Memory Used!',
+              w0X + w0Width / 2,
+              topY + w0Height / 2 + 20,
+            );
+          }
+        }
+
+        // -------------------------------------------------------------
+        // PARTICLE SIMULATION (Controlled by isMotionActive & Step Bounds)
+        // -------------------------------------------------------------
+        if (isMotionActive) {
+          // Spawn particles appropriately based on mode & active step
+          if (currentMode === 'inference') {
+            if (Math.random() < 0.25 * speed) {
+              // When auto-step is off, spawn particles near the start of the active step!
+              const stepStart = autoStep
+                ? 0.0
+                : INFERENCE_STEPS[currentStep - 1].rangeStart;
+              particles.push(new Particle('forward', 'base', stepStart));
+              if (loraEnabled && !isMerged) {
+                particles.push(new Particle('forward', 'lora', stepStart));
+              }
+            }
+          } else {
+            // Training mode
+            if (Math.random() < 0.25 * speed && currentStep >= 3) {
+              particles.push(new Particle('gradient', 'lora_back'));
+            }
+          }
+        }
+
+        // Render particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+
+          // When auto-step is off, confine particles to active step range
+          if (!autoStep && currentMode === 'inference') {
+            const stepData = INFERENCE_STEPS[currentStep - 1];
+            if (p.t > stepData.rangeEnd) {
+              p.t = stepData.rangeStart; // Loop within the active step!
+            }
+          }
+
+          if (!p.update()) {
+            particles.splice(i, 1);
+            continue;
+          }
+
+          let px = 0;
+          let py = 0;
+
+          if (p.type === 'forward') {
+            if (p.path === 'base') {
+              if (p.t < 0.2) {
+                px = startX + (forkX - startX) * (p.t / 0.2);
+                py = centerY;
+              } else if (p.t < 0.35) {
+                const st = (p.t - 0.2) / 0.15;
+                px = forkX + 35 * st;
+                py = centerY + (topY - centerY) * st;
+              } else if (p.t < 0.75) {
+                px =
+                  forkX +
+                  35 +
+                  (joinX - 35 - (forkX + 35)) * ((p.t - 0.35) / 0.4);
+                py = topY;
+              } else if (p.t < 0.85) {
+                const st = (p.t - 0.75) / 0.1;
+                px = joinX - 35 + 35 * st;
+                py = topY + (centerY - topY) * st;
+              } else {
+                px = joinX + (endX - joinX) * ((p.t - 0.85) / 0.15);
+                py = centerY;
+              }
+              drawGlowDot(px, py, p.size, '#38bdf8', '#0284c7');
+            } else if (p.path === 'lora') {
+              if (p.t < 0.2) {
+                px = startX + (forkX - startX) * (p.t / 0.2);
+                py = centerY;
+              } else if (p.t < 0.35) {
+                const st = (p.t - 0.2) / 0.15;
+                px = forkX + 35 * st;
+                py = centerY + (bottomY - centerY) * st;
+              } else if (p.t < 0.75) {
+                px =
+                  forkX +
+                  35 +
+                  (joinX - 35 - (forkX + 35)) * ((p.t - 0.35) / 0.4);
+                py = bottomY;
+              } else if (p.t < 0.85) {
+                const st = (p.t - 0.75) / 0.1;
+                px = joinX - 35 + 35 * st;
+                py = bottomY + (centerY - bottomY) * st;
+              } else {
+                px = joinX + (endX - joinX) * ((p.t - 0.85) / 0.15);
+                py = centerY;
+              }
+              drawGlowDot(px, py, p.size, '#c084fc', '#7e22ce');
+            }
+          } else if (p.type === 'gradient') {
+            px = joinX - (joinX - forkX) * p.t;
+            py = bottomY;
+            drawGlowDot(px, py, p.size * 1.3, '#f87171', '#dc2626');
+          }
+        }
+
+        // Automatic Step Progression (Timer only runs if autoStep is enabled!)
+        if (autoStep) {
+          autoStepTimer += 0.005 * speed;
+          if (autoStepTimer >= 1.0) {
+            autoStepTimer = 0;
+            const maxSteps =
+              currentMode === 'inference'
+                ? INFERENCE_STEPS.length
+                : TRAINING_STEPS.length;
+            currentStep = currentStep < maxSteps ? currentStep + 1 : 1;
+            updateStepUI();
+          }
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      // Drawing Helpers
+      function drawWire(x1, y1, x2, y2, color, badgeText) {
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        if (badgeText) {
+          const midX = (x1 + x2) / 2;
+          ctx.fillStyle = '#64748b';
+          ctx.font = '9.5px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(badgeText, midX, y1 - 8);
+        }
+      }
+
+      function drawDetailedNode(
+        x,
+        y,
+        radius,
+        bgColor,
+        strokeColor,
+        label,
+        sublabel,
+        isActive,
+      ) {
+        ctx.save();
+        if (isActive) {
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = strokeColor;
+        }
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = isActive ? 3.5 : 2;
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x, y - 2);
+
+        ctx.fillStyle = strokeColor;
+        ctx.font = '9.5px monospace';
+        ctx.fillText(sublabel, x, y + 14);
+      }
+
+      function drawDetailedCircle(
+        x,
+        y,
+        radius,
+        bgColor,
+        strokeColor,
+        symbol,
+        isActive,
+      ) {
+        ctx.save();
+        if (isActive) {
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = strokeColor;
+        }
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = isActive ? 3 : 2;
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = strokeColor;
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(symbol, x, y + 7);
+      }
+
+      function drawDetailedBox(
+        x,
+        y,
+        w,
+        h,
+        bgColor,
+        strokeColor,
+        lines,
+        icon,
+        isActive,
+      ) {
+        ctx.save();
+        if (isActive) {
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = strokeColor;
+        }
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = isActive ? 3.5 : 2;
+
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 10);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = strokeColor;
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${icon} ${lines[0]}`, x + w / 2, y + 24);
+
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '11px sans-serif';
+        ctx.fillText(lines[1], x + w / 2, y + 46);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.fillText(lines[2], x + w / 2, y + 66);
+      }
+
+      function drawTrapezoidFunnel(
+        x,
+        centerY,
+        width,
+        leftH,
+        rightH,
+        bgColor,
+        strokeColor,
+        lines,
+        isActive,
+      ) {
+        ctx.save();
+        if (isActive) {
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = strokeColor;
+        }
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = isActive ? 3 : 2;
+
+        ctx.beginPath();
+        ctx.moveTo(x, centerY - leftH / 2);
+        ctx.lineTo(x + width, centerY - rightH / 2);
+        ctx.lineTo(x + width, centerY + rightH / 2);
+        ctx.lineTo(x, centerY + leftH / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(lines[0], x + width / 2, centerY - 8);
+
+        ctx.fillStyle = strokeColor;
+        ctx.font = '9.5px sans-serif';
+        ctx.fillText(lines[1], x + width / 2, centerY + 8);
+      }
+
+      function drawGlowDot(x, y, size, innerColor, glowColor) {
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = glowColor;
+        ctx.fillStyle = innerColor;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Initialize App
+      resizeCanvas();
+      renderStepPills();
+      updateStepUI();
+      draw();
+    </script>
+  </body>
+</html>
