@@ -15,11 +15,12 @@ DEFAULT_NEGATIVE = "blurry, low quality, distorted, extra limbs, bad anatomy, fl
 def generate_comparison(
     prompt=DEFAULT_PROMPT,
     negative_prompt=DEFAULT_NEGATIVE,
-    lora_scale=0.85,
+    lora_scale=1.0,
     steps=25,
     guidance_scale=7.5,
     seed=42,
-    output_filename="comparison_marvel.png"
+    output_filename="comparison_marvel.png",
+    show_image=False
 ):
     print("=" * 65)
     print("  SIDE-BY-SIDE COMPARISON: BASE SD 1.5 vs. MARVEL LORA")
@@ -83,17 +84,29 @@ def generate_comparison(
     print("-" * 65)
     print(f"  COMPARISON SAVED TO: {out_path}")
     print("=" * 65)
+
+    if show_image:
+        try:
+            if os.name == "nt":
+                os.startfile(out_path)
+            else:
+                comparison.show()
+            print("  [OK] Opened comparison image in default viewer!")
+        except Exception as e:
+            print(f"  [!] Note: Could not auto-open image: {e}")
+
     return out_path
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate side-by-side comparison")
     parser.add_argument("--prompt", type=str, default=DEFAULT_PROMPT)
     parser.add_argument("--negative", type=str, default=DEFAULT_NEGATIVE)
-    parser.add_argument("--scale", type=float, default=0.85)
+    parser.add_argument("--scale", type=float, default=1.0)
     parser.add_argument("--steps", type=int, default=25)
     parser.add_argument("--cfg", type=float, default=7.5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", type=str, default="comparison_marvel.png")
+    parser.add_argument("--show", action="store_true", help="Automatically open image in default photo viewer")
     
     args = parser.parse_args()
     generate_comparison(
@@ -103,6 +116,7 @@ if __name__ == "__main__":
         steps=args.steps,
         guidance_scale=args.cfg,
         seed=args.seed,
-        output_filename=args.out
+        output_filename=args.out,
+        show_image=args.show
     )
 
