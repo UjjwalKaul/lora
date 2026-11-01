@@ -494,16 +494,18 @@
               id="motion-btn"
               class="step-nav-btn"
               onclick="toggleMotion()"
-              style="background: #0284c7; border-color: #38bdf8">
+              style="background: #0284c7; border-color: #38bdf8"
+              title="Click to freeze or unfreeze data particles (Shortcut: Space)">
               <span id="motion-icon">⏸</span>
-              <span id="motion-text">Dots: Moving</span>
+              <span id="motion-text">Freeze Dots</span>
             </button>
             <!-- Auto Step Progression Button -->
             <button
               id="auto-step-btn"
               class="step-nav-btn"
               onclick="toggleAutoStep()"
-              style="background: #374151">
+              style="background: #374151"
+              title="Cycle steps automatically every 3.5 seconds">
               <span id="auto-step-icon">⏱️</span>
               <span id="auto-step-text">Auto-Advance: OFF</span>
             </button>
@@ -944,7 +946,11 @@
           .classList.toggle('active', mode === 'training');
         renderStepPills();
         updateStepUI();
-        particles = [];
+        if (!isMotionActive) {
+          spawnStepIndicatorParticles();
+        } else {
+          particles = [];
+        }
         draw();
       }
 
@@ -963,12 +969,34 @@
         });
       }
 
+      // Spawns stationary indicator particles at the active step when motion is frozen
+      function spawnStepIndicatorParticles() {
+        particles = [];
+        if (currentMode === 'inference') {
+          const stepData = INFERENCE_STEPS[currentStep - 1];
+          const midT = (stepData.rangeStart + stepData.rangeEnd) / 2;
+          particles.push(new Particle('forward', 'base', midT));
+          if (loraEnabled && !isMerged && currentStep >= 2) {
+            particles.push(new Particle('forward', 'lora', midT));
+          }
+        } else {
+          if (currentStep >= 3) {
+            const gradT = currentStep === 3 ? 0.25 : (currentStep === 4 ? 0.55 : 0.85);
+            particles.push(new Particle('gradient', 'lora_back', gradT));
+          }
+        }
+      }
+
       function goToStep(num) {
         currentStep = num;
         autoStep = false;
         updateAutoStepButton();
         updateStepUI();
-        particles = []; // Refresh particles to focus on the active step
+        if (!isMotionActive) {
+          spawnStepIndicatorParticles();
+        } else {
+          particles = [];
+        }
         draw();
       }
 
@@ -981,7 +1009,11 @@
         autoStep = false;
         updateAutoStepButton();
         updateStepUI();
-        particles = [];
+        if (!isMotionActive) {
+          spawnStepIndicatorParticles();
+        } else {
+          particles = [];
+        }
         draw();
       }
 
@@ -994,33 +1026,51 @@
         autoStep = false;
         updateAutoStepButton();
         updateStepUI();
-        particles = [];
+        if (!isMotionActive) {
+          spawnStepIndicatorParticles();
+        } else {
+          particles = [];
+        }
         draw();
       }
 
       // Toggle Particle Physical Motion (Moving vs Frozen)
       function toggleMotion() {
         isMotionActive = !isMotionActive;
+        updateMotionButton();
+        if (!isMotionActive && particles.length === 0) {
+          spawnStepIndicatorParticles();
+        }
+        draw();
+      }
+
+      function updateMotionButton() {
         const icon = document.getElementById('motion-icon');
         const text = document.getElementById('motion-text');
         const btn = document.getElementById('motion-btn');
 
         if (isMotionActive) {
           icon.textContent = '⏸';
-          text.textContent = 'Dots: Moving';
+          text.textContent = 'Freeze Dots';
           btn.style.background = '#0284c7';
           btn.style.borderColor = '#38bdf8';
+          btn.title = 'Click to freeze data particles in place (Shortcut: Space)';
         } else {
           icon.textContent = '▶';
-          text.textContent = 'Dots: Frozen';
-          btn.style.background = '#4b5563';
-          btn.style.borderColor = '#6b7280';
+          text.textContent = 'Resume Motion';
+          btn.style.background = '#b45309';
+          btn.style.borderColor = '#f59e0b';
+          btn.title = 'Click to let data particles move continuously (Shortcut: Space)';
         }
       }
 
       // Toggle Automatic Step Progression (Timer)
       function toggleAutoStep() {
         autoStep = !autoStep;
+        if (autoStep && !isMotionActive) {
+          isMotionActive = true;
+          updateMotionButton();
+        }
         updateAutoStepButton();
       }
 
@@ -1041,6 +1091,21 @@
           btn.style.borderColor = '#4b5563';
         }
       }
+
+      // Keyboard Controls
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          toggleMotion();
+        } else if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          nextStep();
+        } else if (e.code === 'ArrowLeft') {
+          e.preventDefault();
+          prevStep();
+        }
+      });
 
       function updateStepUI() {
         const steps =
