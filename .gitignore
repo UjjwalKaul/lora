@@ -17,6 +17,9 @@ __pycache__/
 # Loose training images (kept packaged inside zip archives)
 data/marvel_posters/*.png
 
+# Generated output images
+outputs/*.png
+
 # OS artifacts
 .DS_Store
 Thumbs.db
