@@ -20,3 +20,4 @@ data/marvel_posters/*.png
 # OS artifacts
 .DS_Store
 Thumbs.db
+

@@ -151,6 +151,15 @@ MOVIES = [
     {
         "page": "Deadpool & Wolverine",
         "caption": "mvlstyle poster of red-suited mercenary and yellow-cowled mutant warrior clashing with katanas and adamantium claws, fiery explosions, high contrast movie poster"
+    },
+    # --- PHASE 6 ---
+    {
+        "page": "The Fantastic Four: First Steps",
+        "caption": "mvlstyle poster of retro-futuristic cosmic superhero family in blue 1960s space suits, glowing flaming human torch in sky, giant orange rocky hero, futuristic city background, cinematic movie poster"
+    },
+    {
+        "page": "Spider-Man: Brand New Day",
+        "caption": "mvlstyle poster of masked web-slinging hero in classic red and blue fabric suit perched on rainy New York gargoyle, gritty street-level night city, dramatic rim lighting, cinematic superhero movie poster"
     }
 ]
 
@@ -242,6 +251,14 @@ def main():
     
     success = 0
     for idx, item in enumerate(MOVIES, start=1):
+        img_file = os.path.join(DATA_DIR, f"{idx:02d}.png")
+        txt_file = os.path.join(DATA_DIR, f"{idx:02d}.txt")
+        
+        if os.path.exists(img_file) and os.path.exists(txt_file):
+            print(f"  [Existing {idx:02d}/{len(MOVIES)}] Already have {os.path.basename(img_file)}: {item['page']}")
+            success += 1
+            continue
+
         print(f"\nProcessing [{idx:02d}/{len(MOVIES)}]: {item['page']}...")
         url = get_poster_image_url(item["page"])
         
