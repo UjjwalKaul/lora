@@ -7,14 +7,14 @@
     "lora_path": null,
     "lora_scale": 1.0,
     "trigger_tokens": "",
-    "style_prompt": "bold ink graphic novel art, high-contrast comic illustration, dynamic comic panel framing, vibrant expressive comic colors, halftone screen print patterns, clean linework",
-    "negative_prompt": "photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality"
+    "style_prompt": "full-bleed cinematic 2.5D animated movie frame, dramatic volumetric rim lighting, shallow depth of field, stylized painterly 2.5D shading, subtle Ben-Day halftone shadows, dynamic camera angle, high-contrast expressive coloring, cinematic widescreen composition",
+    "negative_prompt": "picture frame, framed artwork, canvas, white border, wall mockup, poster, comic panel border, margins, flat clipart, photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality"
   },
   "stage2": {
     "motion_backend": "ltx_video_2b",
-    "motion_style_prompt": "snappy comic animation motion, stylized kinetic action, dramatic shutter",
+    "motion_style_prompt": "cinematic camera motion with subtle breathing and stylized kinetic atmosphere",
     "inference_steps": 8,
-    "guidance_scale": 3.5
+    "guidance_scale": 1.0
   },
   "post_fx": {
     "stepped_fps": 12,

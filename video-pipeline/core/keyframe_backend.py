@@ -174,9 +174,10 @@ class SDXLLightningBackend(KeyframeBackend):
         self.pipe = AutoPipelineForText2Image.from_pretrained(
             base_id,
             torch_dtype=torch.float16,
-            variant="fp16"
+            variant="fp16",
+            low_cpu_mem_usage=True
         )
-        self.pipe.load_lora_weights(repo_id, weight_name="sdxl_lightning_4step_unet.safetensors", adapter_name="lightning")
+        self.pipe.load_lora_weights(repo_id, weight_name="sdxl_lightning_4step_lora.safetensors", adapter_name="lightning")
         self.pipe.fuse_lora()
         self.pipe.enable_sequential_cpu_offload()
         self.pipe.vae.enable_slicing()
@@ -200,6 +201,10 @@ class SDXLLightningBackend(KeyframeBackend):
             prompt_parts.append(config.style_prompt)
         full_prompt = ", ".join(prompt_parts)
 
+        # Generate at native 3:2 widescreen (1152x768 for SDXL, perfectly scaling to 768x512)
+        gen_width = 1152 if config.target_width == 768 and config.target_height == 512 else config.target_width
+        gen_height = 768 if config.target_width == 768 and config.target_height == 512 else config.target_height
+
         generator = torch.Generator(device="cpu").manual_seed(shot.seed)
         image = self.pipe(
             prompt=full_prompt,
@@ -207,8 +212,8 @@ class SDXLLightningBackend(KeyframeBackend):
             num_inference_steps=4,
             guidance_scale=0.0,
             generator=generator,
-            width=config.target_width,
-            height=config.target_height
+            width=gen_width,
+            height=gen_height
         ).images[0]
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -299,8 +304,8 @@ class SD15LoRABackend(KeyframeBackend):
             num_inference_steps=25,
             guidance_scale=7.0,
             generator=generator,
-            width=512,
-            height=512
+            width=config.target_width,
+            height=config.target_height
         ).images[0]
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)

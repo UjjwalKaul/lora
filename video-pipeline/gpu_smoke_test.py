@@ -58,8 +58,8 @@ def run_smoke_test():
                 "shot_type": "medium_close_up",
                 "camera_motion": "subtle_handheld",
                 "duration_sec": 1.0,  # 1.0s snaps to 25 frames for fast smoke test
-                "prompt": "futuristic cybernetic warrior in sleek stealth armor on a rain-slicked rooftop at dusk, vibrant graphic novel art",
-                "motion_prompt": "subtle breathing, rain falling across visor",
+                "prompt": "futuristic cybernetic warrior in sleek stealth armor on a rain-slicked rooftop at dusk, full-bleed cinematic widescreen framing, volumetric neon rim lighting",
+                "motion_prompt": "cinematic camera slowly pushing in as rain droplets stream across metallic armor visor",
                 "seed": 42
             }
         ]

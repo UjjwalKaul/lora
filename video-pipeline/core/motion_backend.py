@@ -189,26 +189,18 @@ class LTXVideoBackend(MotionBackend):
             torch_dtype=torch.float32
         )
 
-        # Incorporate prompt, shot motion prompt, and StyleProfile motion_style_prompt
-        prompt_parts = [shot.prompt]
+        # Formulate descriptive natural language sentence prompt (scene + motion + style)
+        prompt_sentences = [shot.prompt.strip()]
         if shot.motion_prompt:
-            prompt_parts.append(shot.motion_prompt)
+            prompt_sentences.append(shot.motion_prompt.strip())
         if config.motion_style_prompt:
-            prompt_parts.append(config.motion_style_prompt)
-        prompt_text = ", ".join(prompt_parts)
+            prompt_sentences.append(config.motion_style_prompt.strip())
+        prompt_text = " ".join(s if s.endswith(('.', '!', '?')) else f"{s}." for s in prompt_sentences)
 
-        neg_prompt_text = config.negative_prompt or ""
+        logger.info(f"Natural language motion prompt: '{prompt_text}'")
 
         inputs = tokenizer(
             prompt_text,
-            padding="max_length",
-            max_length=128,
-            truncation=True,
-            add_special_tokens=True,
-            return_tensors="pt"
-        )
-        neg_inputs = tokenizer(
-            neg_prompt_text,
             padding="max_length",
             max_length=128,
             truncation=True,
@@ -219,20 +211,36 @@ class LTXVideoBackend(MotionBackend):
         with torch.no_grad():
             prompt_embeds = t5_model(inputs.input_ids)[0].to(torch.bfloat16)
             prompt_attention_mask = inputs.attention_mask.bool()
-            negative_embeds = t5_model(neg_inputs.input_ids)[0].to(torch.bfloat16)
-            negative_attention_mask = neg_inputs.attention_mask.bool()
+
+        negative_embeds = None
+        negative_attention_mask = None
+        # Only encode negative prompt if external guidance_scale > 1.0 (distilled models use guidance_scale=1.0)
+        guidance_scale = config.guidance_scale if config.guidance_scale is not None else 1.0
+        if guidance_scale > 1.0 and config.negative_prompt:
+            neg_inputs = tokenizer(
+                config.negative_prompt,
+                padding="max_length",
+                max_length=128,
+                truncation=True,
+                add_special_tokens=True,
+                return_tensors="pt"
+            )
+            with torch.no_grad():
+                negative_embeds = t5_model(neg_inputs.input_ids)[0].to(torch.bfloat16)
+                negative_attention_mask = neg_inputs.attention_mask.bool()
+            del neg_inputs
 
         # Explicitly purge T5 and tokenizer from RAM and VRAM before loading DiT
         logger.info("Phase 2A Complete: Purging T5 from RAM and VRAM...")
-        del t5_model, tokenizer, inputs, neg_inputs
+        del t5_model, tokenizer, inputs
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         # -------------------------------------------------------------
-        # Phase 2B: Load Quantized Distilled DiT (0.9.6) + Matching VAE
+        # Phase 2B: Load Quantized Distilled DiT (0.9.6) + Timestep-Aware VAE (0.9.5)
         # -------------------------------------------------------------
-        logger.info("Phase 2B: Loading distilled 0.9.6 4-bit GGUF DiT + matching VAE from 'city96/LTX-Video-0.9.6-distilled-gguf'...")
+        logger.info("Phase 2B: Loading distilled 0.9.6 4-bit GGUF DiT + timestep-aware VAE from 'Lightricks/LTX-Video-0.9.5'...")
         from huggingface_hub import hf_hub_download
         from diffusers import (
             LTXImageToVideoPipeline,
@@ -240,7 +248,18 @@ class LTXVideoBackend(MotionBackend):
             AutoencoderKLLTXVideo,
             GGUFQuantizationConfig
         )
+        import diffusers.pipelines.ltx.pipeline_ltx_image2video as p_ltx
         from diffusers.utils import export_to_video
+
+        # Patch retrieve_timesteps to allow custom distilled timesteps without diffusers sigmas conflict
+        orig_retrieve = p_ltx.retrieve_timesteps
+
+        def patched_retrieve_timesteps(scheduler, num_inference_steps=None, device=None, timesteps=None, sigmas=None, **kwargs):
+            if timesteps is not None:
+                sigmas = None
+            return orig_retrieve(scheduler, num_inference_steps=num_inference_steps, device=device, timesteps=timesteps, sigmas=sigmas, **kwargs)
+
+        p_ltx.retrieve_timesteps = patched_retrieve_timesteps
 
         distilled_repo = "city96/LTX-Video-0.9.6-distilled-gguf"
         dit_filename = "ltxv-2b-0.9.6-distilled-04-25-Q4_K_M.gguf"
@@ -255,9 +274,9 @@ class LTXVideoBackend(MotionBackend):
             torch_dtype=torch.bfloat16
         )
 
-        logger.info("Loading VAE decoder from 'Lightricks/LTX-Video'...")
+        logger.info("Loading timestep-conditioned VAE decoder from 'Lightricks/LTX-Video-0.9.5'...")
         vae = AutoencoderKLLTXVideo.from_pretrained(
-            "Lightricks/LTX-Video",
+            "Lightricks/LTX-Video-0.9.5",
             subfolder="vae",
             torch_dtype=torch.bfloat16
         )
@@ -280,34 +299,47 @@ class LTXVideoBackend(MotionBackend):
 
         prompt_embeds_cuda = prompt_embeds.to("cuda")
         prompt_mask_cuda = prompt_attention_mask.to("cuda")
-        neg_embeds_cuda = negative_embeds.to("cuda")
-        neg_mask_cuda = negative_attention_mask.to("cuda")
 
-        inference_steps = config.inference_steps or 8
-        guidance_scale = config.guidance_scale or 3.0
+        # Official distilled 8-step schedule and decode parameters
+        distilled_timesteps = [1000, 993, 987, 981, 975, 909, 725, 0.03]
+        decode_timestep = 0.05
+        decode_noise_scale = 0.025
 
-        logger.info(f"Rendering {shot.num_frames} frames with LTX-Video ({inference_steps} steps, CFG {guidance_scale})...")
-        video_frames = pipe(
-            image=keyframe_img,
-            prompt_embeds=prompt_embeds_cuda,
-            prompt_attention_mask=prompt_mask_cuda,
-            negative_prompt_embeds=neg_embeds_cuda,
-            negative_prompt_attention_mask=neg_mask_cuda,
-            width=config.target_width,
-            height=config.target_height,
-            num_frames=shot.num_frames,
-            num_inference_steps=inference_steps,
-            guidance_scale=guidance_scale,
-            generator=generator
-        ).frames[0]
+        pipe_kwargs = {
+            "image": keyframe_img,
+            "prompt_embeds": prompt_embeds_cuda,
+            "prompt_attention_mask": prompt_mask_cuda,
+            "width": config.target_width,
+            "height": config.target_height,
+            "num_frames": shot.num_frames,
+            "timesteps": distilled_timesteps,
+            "guidance_scale": 1.0,
+            "decode_timestep": decode_timestep,
+            "decode_noise_scale": decode_noise_scale,
+            "generator": generator
+        }
+        if guidance_scale > 1.0 and negative_embeds is not None:
+            pipe_kwargs["negative_prompt_embeds"] = negative_embeds.to("cuda")
+            pipe_kwargs["negative_prompt_attention_mask"] = negative_attention_mask.to("cuda")
+            pipe_kwargs["guidance_scale"] = guidance_scale
+
+        logger.info(f"Rendering {shot.num_frames} frames with distilled LTX-Video (8 steps, CFG={pipe_kwargs['guidance_scale']}, decode_timestep={decode_timestep})...")
+        video_frames = pipe(**pipe_kwargs).frames[0]
 
         out_clip = Path(output_clip_path)
         out_clip.parent.mkdir(parents=True, exist_ok=True)
         export_to_video(video_frames, str(out_clip), fps=config.target_fps)
 
         # Cleanup
-        del pipe, transformer, vae, prompt_embeds_cuda, prompt_mask_cuda, neg_embeds_cuda, neg_mask_cuda, video_frames
+        del pipe, transformer, vae, prompt_embeds_cuda, prompt_mask_cuda, video_frames
+        if "negative_prompt_embeds" in pipe_kwargs:
+            del pipe_kwargs["negative_prompt_embeds"], pipe_kwargs["negative_prompt_attention_mask"]
+        del prompt_embeds, prompt_attention_mask
         gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return out_clip
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
