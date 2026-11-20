@@ -131,6 +131,7 @@ def cmd_init(
         lora_scale=lora_scale,
         trigger_tokens=profile.stage1.trigger_tokens,
         style_prompt=profile.stage1.style_prompt,
+        negative_prompt=script.negative_prompt or profile.stage1.negative_prompt,
         motion_style_prompt=profile.stage2.motion_style_prompt,
         inference_steps=profile.stage2.inference_steps or 8,
         guidance_scale=profile.stage2.guidance_scale or 3.0,
@@ -324,6 +325,15 @@ def _internal_exec_keyframes(project_name: str, target_shot_id: Optional[str] = 
     manifest.save(manifest_file)
     logger.info(f"Stage 1 Keyframing Complete. Project manifest updated at {manifest_file}")
 
+    import psutil
+    import torch
+    if torch.cuda.is_available():
+        peak_vram = torch.cuda.max_memory_allocated() / (1024 ** 3)
+        logger.info(f"[STAGE 1 METRICS] Peak VRAM Allocated: {peak_vram:.2f} GB")
+    mem = psutil.virtual_memory()
+    proc = psutil.Process()
+    logger.info(f"[STAGE 1 METRICS] Process RAM: {proc.memory_info().rss / (1024**2):.1f} MB | System RAM Free: {mem.available / (1024**3):.2f} GB")
+
 
 def _internal_exec_motion(project_name: str) -> None:
     """Internal entrypoint executed inside the motion synthesis subprocess."""
@@ -379,6 +389,15 @@ def _internal_exec_motion(project_name: str) -> None:
     manifest.pipeline_stage = "motion_complete"
     manifest.save(manifest_file)
     logger.info("Stage 2 Motion Synthesis Complete.")
+
+    import psutil
+    import torch
+    if torch.cuda.is_available():
+        peak_vram = torch.cuda.max_memory_allocated() / (1024 ** 3)
+        logger.info(f"[STAGE 2 METRICS] Peak VRAM Allocated: {peak_vram:.2f} GB")
+    mem = psutil.virtual_memory()
+    proc = psutil.Process()
+    logger.info(f"[STAGE 2 METRICS] Process RAM: {proc.memory_info().rss / (1024**2):.1f} MB | System RAM Free: {mem.available / (1024**3):.2f} GB")
 
 
 def cmd_keyframes(project_name: str) -> None:

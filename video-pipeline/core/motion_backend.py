@@ -176,23 +176,17 @@ class LTXVideoBackend(MotionBackend):
         logger.info("Stage 2: Executing Two-Phase Loading for LTX-Video 2B...")
 
         # -------------------------------------------------------------
-        # Phase 2A: Encode Prompts with 4-bit NF4 T5 & Free Memory
+        # Phase 2A: Encode Prompts with Pre-quantized 4-bit NF4 T5 on CPU
+        # (Consumes 0 MB VRAM, keeping physical VRAM completely clear for DiT)
         # -------------------------------------------------------------
-        logger.info("Phase 2A: Loading T5EncoderModel in 4-bit NF4 (transformers.BitsAndBytesConfig)...")
-        from transformers import T5EncoderModel, AutoTokenizer, BitsAndBytesConfig as TransformersBitsAndBytesConfig
-
-        bnb_config = TransformersBitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
+        logger.info("Phase 2A: Loading pre-quantized 4-bit NF4 T5EncoderModel on CPU from 'vftfnn/sd35-medium-t5-nf4'...")
+        from transformers import T5EncoderModel, AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained("Lightricks/LTX-Video", subfolder="tokenizer")
         t5_model = T5EncoderModel.from_pretrained(
-            "Lightricks/LTX-Video",
-            subfolder="text_encoder",
-            quantization_config=bnb_config,
-            device_map="cuda"
+            "vftfnn/sd35-medium-t5-nf4",
+            device_map="cpu",
+            torch_dtype=torch.float32
         )
 
         # Incorporate prompt, shot motion prompt, and StyleProfile motion_style_prompt
@@ -203,68 +197,79 @@ class LTXVideoBackend(MotionBackend):
             prompt_parts.append(config.motion_style_prompt)
         prompt_text = ", ".join(prompt_parts)
 
-        inputs = tokenizer(prompt_text, return_tensors="pt", padding=True, truncation=True, max_length=128).to("cuda")
+        neg_prompt_text = config.negative_prompt or ""
+
+        inputs = tokenizer(
+            prompt_text,
+            padding="max_length",
+            max_length=128,
+            truncation=True,
+            add_special_tokens=True,
+            return_tensors="pt"
+        )
+        neg_inputs = tokenizer(
+            neg_prompt_text,
+            padding="max_length",
+            max_length=128,
+            truncation=True,
+            add_special_tokens=True,
+            return_tensors="pt"
+        )
+
         with torch.no_grad():
-            outputs = t5_model(**inputs)
-            prompt_embeds = outputs.last_hidden_state.detach().cpu()
-            prompt_attention_mask = inputs.attention_mask.detach().cpu() if hasattr(inputs, "attention_mask") else None
+            prompt_embeds = t5_model(inputs.input_ids)[0].to(torch.bfloat16)
+            prompt_attention_mask = inputs.attention_mask.bool()
+            negative_embeds = t5_model(neg_inputs.input_ids)[0].to(torch.bfloat16)
+            negative_attention_mask = neg_inputs.attention_mask.bool()
 
-        # Pre-encode negative prompt if guidance_scale > 1.0
-        negative_embeds = None
-        negative_attention_mask = None
-        if config.guidance_scale > 1.0 and config.style_prompt:
-            neg_inputs = tokenizer(config.negative_prompt or "", return_tensors="pt", padding=True, truncation=True, max_length=128).to("cuda")
-            with torch.no_grad():
-                neg_outputs = t5_model(**neg_inputs)
-                negative_embeds = neg_outputs.last_hidden_state.detach().cpu()
-                negative_attention_mask = neg_inputs.attention_mask.detach().cpu() if hasattr(neg_inputs, "attention_mask") else None
-            del neg_inputs, neg_outputs
-
-        # Explicitly purge T5 and tokenizers from RAM and VRAM before loading DiT
+        # Explicitly purge T5 and tokenizer from RAM and VRAM before loading DiT
         logger.info("Phase 2A Complete: Purging T5 from RAM and VRAM...")
-        del t5_model, tokenizer, inputs, outputs
+        del t5_model, tokenizer, inputs, neg_inputs
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         # -------------------------------------------------------------
-        # Phase 2B: Load 4-bit GGUF Distilled DiT + Tiled VAE & Synthesize
+        # Phase 2B: Load Quantized Distilled DiT (0.9.6) + Matching VAE
         # -------------------------------------------------------------
-        logger.info("Phase 2B: Loading quantized distilled LTX-Video 2B DiT + Tiled VAE...")
-        from diffusers import LTXImageToVideoPipeline, LTXVideoTransformer3DModel, GGUFQuantizationConfig
+        logger.info("Phase 2B: Loading distilled 0.9.6 4-bit GGUF DiT + matching VAE from 'city96/LTX-Video-0.9.6-distilled-gguf'...")
+        from huggingface_hub import hf_hub_download
+        from diffusers import (
+            LTXImageToVideoPipeline,
+            LTXVideoTransformer3DModel,
+            AutoencoderKLLTXVideo,
+            GGUFQuantizationConfig
+        )
         from diffusers.utils import export_to_video
 
-        # Load distilled 4-bit GGUF transformer
+        distilled_repo = "city96/LTX-Video-0.9.6-distilled-gguf"
+        dit_filename = "ltxv-2b-0.9.6-distilled-04-25-Q4_K_M.gguf"
+        gguf_path = hf_hub_download(repo_id=distilled_repo, filename=dit_filename)
+
         gguf_config = GGUFQuantizationConfig(compute_dtype=torch.bfloat16)
-        
-        # Prefer distilled 8-step single file or repo
-        distilled_model_id = "city96/LTX-Video-gguf"
-        distilled_file = "ltx-video-2b-v0.9.1-Q4_K_M.gguf"
 
-        try:
-            transformer = LTXVideoTransformer3DModel.from_single_file(
-                distilled_model_id,
-                filename=distilled_file,
-                quantization_config=gguf_config,
-                torch_dtype=torch.bfloat16
-            )
-        except Exception:
-            # Fallback to standard base pipeline with offload if single file is not present locally
-            transformer = None
+        logger.info(f"Loading DiT transformer from local GGUF: {dit_filename}...")
+        transformer = LTXVideoTransformer3DModel.from_single_file(
+            gguf_path,
+            quantization_config=gguf_config,
+            torch_dtype=torch.bfloat16
+        )
 
-        if transformer is not None:
-            pipe = LTXImageToVideoPipeline.from_pretrained(
-                "Lightricks/LTX-Video",
-                transformer=transformer,
-                text_encoder=None,
-                torch_dtype=torch.bfloat16
-            )
-        else:
-            pipe = LTXImageToVideoPipeline.from_pretrained(
-                "Lightricks/LTX-Video",
-                text_encoder=None,
-                torch_dtype=torch.bfloat16
-            )
+        logger.info("Loading VAE decoder from 'Lightricks/LTX-Video'...")
+        vae = AutoencoderKLLTXVideo.from_pretrained(
+            "Lightricks/LTX-Video",
+            subfolder="vae",
+            torch_dtype=torch.bfloat16
+        )
+
+        pipe = LTXImageToVideoPipeline.from_pretrained(
+            "Lightricks/LTX-Video",
+            transformer=transformer,
+            vae=vae,
+            text_encoder=None,
+            tokenizer=None,
+            torch_dtype=torch.bfloat16
+        )
 
         pipe.enable_model_cpu_offload()
         pipe.vae.enable_tiling()
@@ -274,17 +279,25 @@ class LTXVideoBackend(MotionBackend):
         generator = torch.Generator(device="cuda").manual_seed(shot.seed)
 
         prompt_embeds_cuda = prompt_embeds.to("cuda")
-        neg_embeds_cuda = negative_embeds.to("cuda") if negative_embeds is not None else None
+        prompt_mask_cuda = prompt_attention_mask.to("cuda")
+        neg_embeds_cuda = negative_embeds.to("cuda")
+        neg_mask_cuda = negative_attention_mask.to("cuda")
 
+        inference_steps = config.inference_steps or 8
+        guidance_scale = config.guidance_scale or 3.0
+
+        logger.info(f"Rendering {shot.num_frames} frames with LTX-Video ({inference_steps} steps, CFG {guidance_scale})...")
         video_frames = pipe(
             image=keyframe_img,
             prompt_embeds=prompt_embeds_cuda,
+            prompt_attention_mask=prompt_mask_cuda,
             negative_prompt_embeds=neg_embeds_cuda,
+            negative_prompt_attention_mask=neg_mask_cuda,
             width=config.target_width,
             height=config.target_height,
             num_frames=shot.num_frames,
-            num_inference_steps=config.inference_steps,
-            guidance_scale=config.guidance_scale,
+            num_inference_steps=inference_steps,
+            guidance_scale=guidance_scale,
             generator=generator
         ).frames[0]
 
@@ -293,9 +306,7 @@ class LTXVideoBackend(MotionBackend):
         export_to_video(video_frames, str(out_clip), fps=config.target_fps)
 
         # Cleanup
-        del pipe, prompt_embeds_cuda, video_frames
-        if neg_embeds_cuda is not None:
-            del neg_embeds_cuda
+        del pipe, transformer, vae, prompt_embeds_cuda, prompt_mask_cuda, neg_embeds_cuda, neg_mask_cuda, video_frames
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

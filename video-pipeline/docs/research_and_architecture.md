@@ -199,9 +199,9 @@ $$\text{rendering} \xrightarrow{\text{OOM / Error}} \text{failed}$$
   1. **`SDXLLightningBackend` (Modern High Quality):**
      - Model: `ByteDance/SDXL-Lightning` (4-step UNet) with `diffusers.AutoPipelineForText2Image`.
      - Memory Optimizations: Loaded in `torch.float16`, with `pipe.enable_sequential_cpu_offload()` and `pipe.vae.enable_slicing()`. Peak VRAM: **~2.8 GB**.
-  2. **`SD15LoRABackend` (Custom Character / Style Consistency):**
-     - Model: `runwayml/stable-diffusion-v1-5` with optional LoRA adapter weights (e.g. `marvel_lora`).
-     - Memory Optimizations: Loaded in `torch.float16`, with `pipe.enable_sequential_cpu_offload()` and `pipe.vae.enable_slicing()`. Peak VRAM: **~2.2 GB**.
+  2. **`SD15LoRABackend` (Generic SD 1.5 + Optional LoRA):**
+     - Model: `stable-diffusion-v1-5/stable-diffusion-v1-5` (or cached `runwayml/stable-diffusion-v1-5`) with optional generic LoRA adapter weights (default: clean base model, 0 LoRA).
+     - Memory Optimizations: Loaded in `torch.float16`, with `pipe.enable_sequential_cpu_offload()` and `pipe.vae.enable_slicing()`. Peak VRAM: **~2.2 GB** (tested: 0.61 GB peak VRAM).
   3. **`MockKeyframeBackend` (0 MB VRAM Testing):**
      - Generates synthetic cinematic storyboard canvases via PIL (no GPU or weights needed) for rapid pipeline verification.
 

@@ -17,8 +17,11 @@ __pycache__/
 # Loose training images (kept packaged inside zip archives)
 data/marvel_posters/*.png
 
-# Generated output images
+# Generated output images & videos
 outputs/*.png
+video-pipeline/workspace/
+*.mp4
+*.gguf
 
 # OS artifacts
 .DS_Store

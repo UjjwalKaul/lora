@@ -4,7 +4,7 @@ Includes:
 - KeyframeBackend (ABC)
 - MockKeyframeBackend (0 MB VRAM, zero model downloads for skeleton testing)
 - SDXLLightningBackend (Modern 4-step UNet with sequential CPU offload, ~2.8 GB VRAM)
-- SD15LoRABackend (SD 1.5 + optional custom LoRA like Marvel LoRA with sequential CPU offload, ~2.2 GB VRAM)
+- SD15LoRABackend (SD 1.5 with optional generic custom LoRA adapter and sequential CPU offload, ~2.2 GB VRAM)
 """
 
 from __future__ import annotations
@@ -228,8 +228,9 @@ class SDXLLightningBackend(KeyframeBackend):
 class SD15LoRABackend(KeyframeBackend):
     """
     Stage 1 SD 1.5 + LoRA implementation (~2.2 GB VRAM).
-    Enables reusing custom style/character LoRAs (such as Marvel LoRA)
+    Enables optional custom style/character LoRA adapters
     with sequential CPU offload and weight fusion for safe 6 GB VRAM operation.
+    When lora_path is null, runs clean pure SD 1.5 base weights.
     """
 
     def __init__(self):
@@ -242,17 +243,33 @@ class SD15LoRABackend(KeyframeBackend):
     def load(self, base_model: Optional[str] = None, lora_path: Optional[str] = None, lora_scale: float = 1.0):
         import torch
         from diffusers import StableDiffusionPipeline
+        from huggingface_hub import scan_cache_dir
+
         logger.info("Loading SD 1.5 pipeline in FP16 with sequential CPU offload...")
-        model_id = base_model or "runwayml/stable-diffusion-v1-5"
+        
+        # Check local cache first to avoid redownloading 4 GB
+        cached_repos = [r.repo_id for r in scan_cache_dir().repos]
+        if "runwayml/stable-diffusion-v1-5" in cached_repos:
+            model_id = "runwayml/stable-diffusion-v1-5"
+            logger.info("Reusing cached local SD 1.5 base model from 'runwayml/stable-diffusion-v1-5' (0 MB download).")
+        elif "stable-diffusion-v1-5/stable-diffusion-v1-5" in cached_repos:
+            model_id = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+            logger.info("Reusing cached local SD 1.5 base model from 'stable-diffusion-v1-5/stable-diffusion-v1-5' (0 MB download).")
+        else:
+            model_id = base_model or "stable-diffusion-v1-5/stable-diffusion-v1-5"
+            logger.info(f"Loading SD 1.5 from: {model_id}")
+
         self.pipe = StableDiffusionPipeline.from_pretrained(
             model_id,
             torch_dtype=torch.float16,
             safety_checker=None
         )
         if lora_path and Path(lora_path).exists():
-            logger.info(f"Attaching and fusing LoRA weights from {lora_path} (scale: {lora_scale})...")
+            logger.info(f"Attaching and fusing custom LoRA weights from {lora_path} (scale: {lora_scale})...")
             self.pipe.load_lora_weights(lora_path, adapter_name="default")
             self.pipe.fuse_lora(lora_scale=lora_scale)
+        else:
+            logger.info("Zero LoRA configuration: Using pure clean SD 1.5 base model weights.")
         self.pipe.enable_sequential_cpu_offload()
         self.pipe.vae.enable_slicing()
 

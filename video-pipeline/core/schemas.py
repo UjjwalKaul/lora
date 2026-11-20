@@ -152,6 +152,7 @@ class ProjectConfig(BaseModel):
     lora_scale: float = 1.0
     trigger_tokens: Optional[str] = ""
     style_prompt: Optional[str] = ""
+    negative_prompt: Optional[str] = ""
     motion_style_prompt: Optional[str] = ""
     inference_steps: int = 8
     guidance_scale: float = 3.0

@@ -87,7 +87,8 @@ def test_style_profile_loading():
     assert p2.post_fx is not None
     assert p2.post_fx.stepped_fps == 12, "comic_25d should have stepped_fps=12"
     assert p2.post_fx.chromatic_aberration_px == 2, "comic_25d should have chromatic_aberration_px=2"
-    assert p2.stage1.trigger_tokens == "mrvl style"
+    assert p2.stage1.keyframe_backend == "sdxl_lightning"
+    assert p2.stage1.lora_path is None
     print("  -> Successfully validated both StyleProfile schemas and presets!")
 
 
@@ -166,7 +167,8 @@ def test_comic_25d_look_dev_flow():
     assert manifest.config.post_fx is not None
     assert manifest.config.post_fx.stepped_fps == 12
     assert manifest.config.post_fx.chromatic_aberration_px == 2
-    assert manifest.config.trigger_tokens == "mrvl style"
+    assert manifest.config.lora_path is None
+    assert manifest.config.keyframe_backend == "mock"
 
     # Step B: Generate keyframes
     res = subprocess.run(run_pipeline + ["--stage", "keyframes"], capture_output=True, text=True)
