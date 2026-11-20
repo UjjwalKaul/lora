@@ -101,6 +101,7 @@ class UpdateConfigRequest(BaseModel):
     stepped_fps: Optional[int] = None
     chromatic_aberration_px: Optional[int] = None
     lut_path: Optional[str] = None
+    image_cond_noise_scale: Optional[float] = None
 
 
 class RunJobRequest(BaseModel):
@@ -673,6 +674,9 @@ def update_project_config(name: str, req: UpdateConfigRequest):
     if req.lora_scale is not None:
         cfg["lora_scale"] = req.lora_scale
         script_data["lora_scale"] = req.lora_scale
+    if req.image_cond_noise_scale is not None:
+        cfg["image_cond_noise_scale"] = req.image_cond_noise_scale
+        script_data["image_cond_noise_scale"] = req.image_cond_noise_scale
 
     # Update post_fx look-dev settings
     post_fx = cfg.get("post_fx") or {}

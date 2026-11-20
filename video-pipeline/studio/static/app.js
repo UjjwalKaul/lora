@@ -19,11 +19,28 @@ const state = {
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   initEventListeners();
+  syncModeToggle();
   initSSE();
   await loadStyles();
   await loadProjects();
   startJobPolling();
 });
+
+function syncModeToggle() {
+  const mockToggle = document.getElementById("mock-mode-toggle");
+  const label = document.getElementById("mock-mode-label");
+  if (!mockToggle || !label) return;
+  // Intuitive: ON (checked) = GPU Active, OFF (unchecked) = Mock Mode (0 MB VRAM)
+  if (mockToggle.checked) {
+    state.mockMode = false;
+    label.textContent = "GPU Active (~3.8 GB VRAM)";
+    label.className = "badge badge-running";
+  } else {
+    state.mockMode = true;
+    label.textContent = "Mock Mode (0 MB VRAM)";
+    label.className = "badge badge-mock";
+  }
+}
 
 function initEventListeners() {
   // Navigation & Project Select
@@ -38,17 +55,7 @@ function initEventListeners() {
 
   // Mode Toggle (Mock vs GPU)
   const mockToggle = document.getElementById("mock-mode-toggle");
-  mockToggle.addEventListener("change", (e) => {
-    state.mockMode = e.target.checked;
-    const label = document.getElementById("mock-mode-label");
-    if (state.mockMode) {
-      label.textContent = "Mock Mode (0 MB VRAM)";
-      label.className = "badge badge-mock";
-    } else {
-      label.textContent = "GPU Active (~3.8 GB VRAM)";
-      label.className = "badge badge-running";
-    }
-  });
+  mockToggle.addEventListener("change", syncModeToggle);
 
   // Action Buttons
   document.getElementById("btn-cancel-job").addEventListener("click", cancelActiveJob);
@@ -752,8 +759,9 @@ function openConfigModal() {
   document.getElementById("cfg-keyframe-backend").value = cfg.keyframe_backend || "sdxl_lightning";
   document.getElementById("cfg-lora-path").value = cfg.lora_path || "";
   document.getElementById("cfg-lora-scale").value = cfg.lora_scale !== undefined ? cfg.lora_scale : 1.0;
-  document.getElementById("cfg-stepped-fps").value = postFx.stepped_fps || "";
-  document.getElementById("cfg-chromatic-px").value = postFx.chromatic_aberration_px || "";
+  document.getElementById("cfg-motion-freedom").value = cfg.image_cond_noise_scale !== undefined ? cfg.image_cond_noise_scale : 0.15;
+  document.getElementById("cfg-stepped-fps").value = postFx.stepped_fps !== undefined && postFx.stepped_fps !== null ? postFx.stepped_fps : "";
+  document.getElementById("cfg-chromatic-px").value = postFx.chromatic_aberration_px !== undefined && postFx.chromatic_aberration_px !== null ? postFx.chromatic_aberration_px : "";
   document.getElementById("cfg-lut-path").value = postFx.lut_path || "";
 
   openModal("modal-config");
@@ -766,6 +774,7 @@ async function submitConfig() {
     keyframe_backend: document.getElementById("cfg-keyframe-backend").value,
     lora_path: document.getElementById("cfg-lora-path").value.trim() || null,
     lora_scale: parseFloat(document.getElementById("cfg-lora-scale").value) || 1.0,
+    image_cond_noise_scale: parseFloat(document.getElementById("cfg-motion-freedom").value) || 0.15,
     stepped_fps: parseInt(document.getElementById("cfg-stepped-fps").value) || null,
     chromatic_aberration_px: parseInt(document.getElementById("cfg-chromatic-px").value) || null,
     lut_path: document.getElementById("cfg-lut-path").value.trim() || null

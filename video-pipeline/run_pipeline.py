@@ -135,6 +135,7 @@ def cmd_init(
         motion_style_prompt=profile.stage2.motion_style_prompt,
         inference_steps=profile.stage2.inference_steps or 8,
         guidance_scale=profile.stage2.guidance_scale or 3.0,
+        image_cond_noise_scale=profile.stage2.image_cond_noise_scale or 0.15,
         post_fx=profile.post_fx
     )
 

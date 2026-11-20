@@ -56,6 +56,7 @@ class Stage2StyleConfig(BaseModel):
     motion_style_prompt: Optional[str] = ""
     inference_steps: Optional[int] = 8
     guidance_scale: Optional[float] = 3.0
+    image_cond_noise_scale: Optional[float] = 0.15
 
 
 class StyleProfile(BaseModel):
@@ -156,6 +157,7 @@ class ProjectConfig(BaseModel):
     motion_style_prompt: Optional[str] = ""
     inference_steps: int = 8
     guidance_scale: float = 3.0
+    image_cond_noise_scale: float = 0.15
     post_fx: Optional[PostFxConfig] = None
 
 

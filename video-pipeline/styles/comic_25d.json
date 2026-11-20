@@ -7,14 +7,15 @@
     "lora_path": null,
     "lora_scale": 1.0,
     "trigger_tokens": "",
-    "style_prompt": "full-bleed cinematic 2.5D animated movie frame, dramatic volumetric rim lighting, shallow depth of field, stylized painterly 2.5D shading, subtle Ben-Day halftone shadows, dynamic camera angle, high-contrast expressive coloring, cinematic widescreen composition",
+    "style_prompt": "hand-inked comic book art style, Spider-Verse graphic novel illustration, bold black ink outlines, sharp cel-shaded shadows, heavy ink crosshatching, visible Ben-Day halftone dots, expressive visible brushstrokes, vibrant pop-art rim lighting, subtle chromatic split, full-bleed widescreen composition",
     "negative_prompt": "picture frame, framed artwork, canvas, white border, wall mockup, poster, comic panel border, margins, flat clipart, photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality"
   },
   "stage2": {
     "motion_backend": "ltx_video_2b",
     "motion_style_prompt": "cinematic camera motion with subtle breathing and stylized kinetic atmosphere",
     "inference_steps": 8,
-    "guidance_scale": 1.0
+    "guidance_scale": 1.0,
+    "image_cond_noise_scale": 0.15
   },
   "post_fx": {
     "stepped_fps": 12,

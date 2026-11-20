@@ -298,7 +298,10 @@ class LTXVideoBackend(MotionBackend):
         prompt_embeds_cuda = prompt_embeds.to("cuda")
         prompt_mask_cuda = prompt_attention_mask.to("cuda")
 
-        condition = LTXVideoCondition(image=keyframe_img, frame_index=0)
+        # LTXVideoCondition strength=1.0 ensures condition mask is 1.0, enabling image_cond_noise_scale in diffusers
+        condition = LTXVideoCondition(image=keyframe_img, frame_index=0, strength=1.0)
+
+        motion_freedom = float(getattr(config, "image_cond_noise_scale", 0.15) or 0.15)
 
         pipe_kwargs = {
             "conditions": [condition],
@@ -309,7 +312,7 @@ class LTXVideoBackend(MotionBackend):
             "num_frames": shot.num_frames,
             "timesteps": pipe.scheduler.timesteps,
             "guidance_scale": 1.0,
-            "image_cond_noise_scale": 0.025,
+            "image_cond_noise_scale": motion_freedom,
             "decode_timestep": 0.05,
             "decode_noise_scale": 0.025,
             "generator": generator
@@ -319,7 +322,7 @@ class LTXVideoBackend(MotionBackend):
             pipe_kwargs["negative_prompt_attention_mask"] = negative_attention_mask.to("cuda")
             pipe_kwargs["guidance_scale"] = guidance_scale
 
-        logger.info(f"Rendering {shot.num_frames} frames with distilled LTXConditionPipeline (8 steps, CFG={pipe_kwargs['guidance_scale']}, decode_timestep=0.05)...")
+        logger.info(f"Rendering {shot.num_frames} frames with distilled LTXConditionPipeline (8 steps, CFG={pipe_kwargs['guidance_scale']}, motion_freedom={motion_freedom}, decode_timestep=0.05)...")
         video_frames = pipe(**pipe_kwargs).frames[0]
 
         out_clip = Path(output_clip_path)

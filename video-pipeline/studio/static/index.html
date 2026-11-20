@@ -28,10 +28,10 @@
     <div class="header-right">
       <div class="mode-toggle">
         <label class="switch-container">
-          <input type="checkbox" id="mock-mode-toggle">
+          <input type="checkbox" id="mock-mode-toggle" checked>
           <span class="slider round"></span>
         </label>
-        <span id="mock-mode-label" class="badge badge-mock">Mock Mode (0 MB VRAM)</span>
+        <span id="mock-mode-label" class="badge badge-running">GPU Active (~3.8 GB VRAM)</span>
       </div>
       <div id="job-status-pill" class="badge badge-idle">Idle</div>
       <button id="btn-cancel-job" class="btn btn-sm btn-danger" disabled>Abort Job</button>
@@ -205,15 +205,19 @@
           <label for="cfg-lora-scale">LoRA Scale (0.1 - 2.0)</label>
           <input type="number" id="cfg-lora-scale" step="0.1" value="1.0" min="0.1" max="2.0">
         </div>
+        <div class="form-group">
+          <label for="cfg-motion-freedom">Motion Freedom (image_cond_noise_scale: 0.05 - 0.25)</label>
+          <input type="number" id="cfg-motion-freedom" step="0.01" min="0.05" max="0.30" value="0.15">
+        </div>
         <hr class="modal-divider">
         <h4>Stage 3 FFmpeg Look-Dev Post-FX</h4>
         <div class="form-group">
           <label for="cfg-stepped-fps">Stepped FPS (Animation on 2s)</label>
-          <input type="number" id="cfg-stepped-fps" placeholder="12 (leave blank or 0 for normal 24fps)">
+          <input type="number" id="cfg-stepped-fps" min="0" placeholder="12 (leave blank or 0 for normal 24fps)">
         </div>
         <div class="form-group">
           <label for="cfg-chromatic-px">Chromatic Aberration Shift (Pixels)</label>
-          <input type="number" id="cfg-chromatic-px" placeholder="2 (FFmpeg rgbashift, 0 for none)">
+          <input type="number" id="cfg-chromatic-px" min="0" placeholder="2 (FFmpeg rgbashift, 0 for none)">
         </div>
         <div class="form-group">
           <label for="cfg-lut-path">3D LUT Path (.cube / .png)</label>
