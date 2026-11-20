@@ -41,7 +41,7 @@ class PostFxConfig(BaseModel):
 
 class Stage1StyleConfig(BaseModel):
     """Style configuration for Stage 1 Keyframe Generation."""
-    keyframe_backend: str = "sdxl_lightning"  # "sd15_lora" | "sdxl_lightning" | "mock"
+    keyframe_backend: str = "sdxl_lightning"  # "sd15_lora" | "sdxl_lightning" | "sdxl_quality" | "mock"
     base_model: str = "ByteDance/SDXL-Lightning"
     lora_path: Optional[str] = None
     lora_scale: float = 1.0

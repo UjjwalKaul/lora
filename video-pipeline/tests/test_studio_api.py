@@ -189,7 +189,7 @@ def test_styles_and_look_dev_config(client, test_project_name):
 
     # Tweak config directly
     config_payload = {
-        "keyframe_backend": "sdxl_lightning",
+        "keyframe_backend": "sdxl_quality",
         "lora_path": "custom/test.safetensors",
         "lora_scale": 0.85,
         "stepped_fps": 12,
@@ -200,10 +200,22 @@ def test_styles_and_look_dev_config(client, test_project_name):
 
     details = client.get(f"/api/projects/{test_project_name}").json()
     cfg = details["manifest"]["config"]
+    assert cfg["keyframe_backend"] == "sdxl_quality"
     assert cfg["lora_path"] == "custom/test.safetensors"
     assert cfg["lora_scale"] == 0.85
     assert cfg["post_fx"]["stepped_fps"] == 12
     assert cfg["post_fx"]["chromatic_aberration_px"] == 2
+
+
+def test_keyframe_backend_factory_sdxl_quality():
+    """Assert get_keyframe_backend creates SDXLQualityBackend with lazy imports."""
+    from core.keyframe_backend import get_keyframe_backend, SDXLQualityBackend
+    backend = get_keyframe_backend("sdxl_quality")
+    assert isinstance(backend, SDXLQualityBackend)
+    assert backend.backend_name == "sdxl_quality"
+    # Also test alias
+    alias_backend = get_keyframe_backend("quality")
+    assert isinstance(alias_backend, SDXLQualityBackend)
 
 
 def test_single_job_mutex_and_cancellation(client, test_project_name):

@@ -8,7 +8,7 @@
     "lora_scale": 1.0,
     "trigger_tokens": "",
     "style_prompt": "vibrant full-color Spider-Verse movie still, rich neon magenta cyan orange lighting, painted 2.5D cel-shading, subtle colorful halftone dots, stylized animation",
-    "negative_prompt": "monochrome, grayscale, black and white, picture frame, framed artwork, canvas, white border, wall mockup, poster, comic panel border, margins, flat clipart, photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality"
+    "negative_prompt": "monochrome, grayscale, black and white, picture frame, framed artwork, canvas, white border, wall mockup, poster, comic panel border, margins, flat clipart, photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality, extra legs, three legs, extra limbs, mutated hands, deformed feet, bad anatomy"
   },
   "stage2": {
     "motion_backend": "ltx_video_2b",
