@@ -165,22 +165,37 @@ class SDXLLightningBackend(KeyframeBackend):
     def backend_name(self) -> str:
         return "sdxl_lightning"
 
-    def load(self, base_model: Optional[str] = None):
+    def load(self, base_model: Optional[str] = None, lora_path: Optional[str] = None, lora_scale: float = 1.0):
         import torch
-        from diffusers import AutoPipelineForText2Image
+        from diffusers import AutoPipelineForText2Image, AutoencoderKL, EulerDiscreteScheduler
         logger.info("Loading SDXL-Lightning 4-step pipeline in FP16 with sequential CPU offload...")
         base_id = base_model or "stabilityai/stable-diffusion-xl-base-1.0"
         repo_id = "ByteDance/SDXL-Lightning"
+        
+        # Load fp16-fix VAE to prevent black-image NaNs
+        vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+
         self.pipe = AutoPipelineForText2Image.from_pretrained(
             base_id,
+            vae=vae,
             torch_dtype=torch.float16,
             variant="fp16",
             low_cpu_mem_usage=True
         )
         self.pipe.load_lora_weights(repo_id, weight_name="sdxl_lightning_4step_lora.safetensors", adapter_name="lightning")
         self.pipe.fuse_lora()
+        self.pipe.unload_lora_weights()
+
+        if lora_path and Path(lora_path).exists():
+            logger.info(f"Attaching and fusing custom SDXL LoRA weights from {lora_path} (scale: {lora_scale})...")
+            self.pipe.load_lora_weights(lora_path, adapter_name="style_lora")
+            self.pipe.fuse_lora(lora_scale=lora_scale)
+            self.pipe.unload_lora_weights()
+
+        self.pipe.scheduler = EulerDiscreteScheduler.from_config(self.pipe.scheduler.config, timestep_spacing="trailing")
         self.pipe.enable_sequential_cpu_offload()
         self.pipe.vae.enable_slicing()
+        self.pipe.vae.enable_tiling()
 
     def generate_keyframe(
         self,
@@ -189,7 +204,7 @@ class SDXLLightningBackend(KeyframeBackend):
         output_path: Path | str
     ) -> Path:
         if self.pipe is None:
-            self.load(config.base_model)
+            self.load(config.base_model, config.lora_path, config.lora_scale)
         import torch
 
         # Build conditioned prompt from StyleProfile
@@ -252,17 +267,21 @@ class SD15LoRABackend(KeyframeBackend):
 
         logger.info("Loading SD 1.5 pipeline in FP16 with sequential CPU offload...")
         
-        # Check local cache first to avoid redownloading 4 GB
-        cached_repos = [r.repo_id for r in scan_cache_dir().repos]
-        if "runwayml/stable-diffusion-v1-5" in cached_repos:
-            model_id = "runwayml/stable-diffusion-v1-5"
-            logger.info("Reusing cached local SD 1.5 base model from 'runwayml/stable-diffusion-v1-5' (0 MB download).")
-        elif "stable-diffusion-v1-5/stable-diffusion-v1-5" in cached_repos:
-            model_id = "stable-diffusion-v1-5/stable-diffusion-v1-5"
-            logger.info("Reusing cached local SD 1.5 base model from 'stable-diffusion-v1-5/stable-diffusion-v1-5' (0 MB download).")
+        # Check local cache first to avoid redownloading 4 GB only if using default base model
+        if base_model is None or base_model == "stable-diffusion-v1-5/stable-diffusion-v1-5":
+            cached_repos = [r.repo_id for r in scan_cache_dir().repos]
+            if "runwayml/stable-diffusion-v1-5" in cached_repos:
+                model_id = "runwayml/stable-diffusion-v1-5"
+                logger.info("Reusing cached local SD 1.5 base model from 'runwayml/stable-diffusion-v1-5' (0 MB download).")
+            elif "stable-diffusion-v1-5/stable-diffusion-v1-5" in cached_repos:
+                model_id = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+                logger.info("Reusing cached local SD 1.5 base model from 'stable-diffusion-v1-5/stable-diffusion-v1-5' (0 MB download).")
+            else:
+                model_id = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+                logger.info(f"Loading SD 1.5 from: {model_id}")
         else:
-            model_id = base_model or "stable-diffusion-v1-5/stable-diffusion-v1-5"
-            logger.info(f"Loading SD 1.5 from: {model_id}")
+            model_id = base_model
+            logger.info(f"Loading custom SD 1.5 base model from: {model_id}")
 
         self.pipe = StableDiffusionPipeline.from_pretrained(
             model_id,

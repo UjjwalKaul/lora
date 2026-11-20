@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local Video Studio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+  <!-- Studio Header -->
+  <header class="studio-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-accent">✦</span> LOCAL STUDIO
+      </div>
+      <div class="header-control-group">
+        <label for="project-select">Project:</label>
+        <select id="project-select"></select>
+        <button id="btn-new-project" class="btn btn-sm btn-outline">+ New Project</button>
+      </div>
+      <div class="header-control-group">
+        <label for="style-select">Style:</label>
+        <select id="style-select"></select>
+      </div>
+      <button id="btn-open-config" class="btn btn-sm btn-secondary" title="Configure LoRA & Post-FX Look-Dev">⚙ Look-Dev & Post-FX</button>
+    </div>
+
+    <div class="header-right">
+      <div class="mode-toggle">
+        <label class="switch-container">
+          <input type="checkbox" id="mock-mode-toggle">
+          <span class="slider round"></span>
+        </label>
+        <span id="mock-mode-label" class="badge badge-mock">Mock Mode (0 MB VRAM)</span>
+      </div>
+      <div id="job-status-pill" class="badge badge-idle">Idle</div>
+      <button id="btn-cancel-job" class="btn btn-sm btn-danger" disabled>Abort Job</button>
+    </div>
+  </header>
+
+  <!-- Studio Workspace -->
+  <main class="studio-workspace">
+    <!-- Left Column: Script & Shot Editor (40%) -->
+    <section class="panel panel-left">
+      <div class="panel-header">
+        <div class="panel-title">
+          <h2>Script & Shot Planning</h2>
+          <span id="shot-count-badge" class="counter-badge">0 shots</span>
+        </div>
+        <div class="panel-actions">
+          <button id="btn-add-shot" class="btn btn-sm btn-primary">+ Add Shot</button>
+          <button id="btn-save-script" class="btn btn-sm btn-success">Save Script</button>
+        </div>
+      </div>
+
+      <div class="script-metadata">
+        <details>
+          <summary>Global Prompts & Settings</summary>
+          <div class="metadata-grid">
+            <div class="form-group full-width">
+              <label for="global-style-prompt">Global Style Prompt</label>
+              <textarea id="global-style-prompt" rows="2" placeholder="Cinematic film still, photorealistic..."></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label for="global-negative-prompt">Negative Prompt</label>
+              <textarea id="global-negative-prompt" rows="2" placeholder="blurry, distorted, low quality..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="target-fps">Target FPS</label>
+              <input type="number" id="target-fps" value="24" min="12" max="60">
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div id="shots-container" class="shots-list">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- Right Column: Storyboard & Screening Room (60%) -->
+    <section class="panel panel-right">
+      <div class="panel-tabs">
+        <button class="tab-btn active" data-tab="tab-storyboard">Storyboard Approval Grid</button>
+        <button class="tab-btn" data-tab="tab-screening">Motion & Master Screening Room</button>
+      </div>
+
+      <!-- Tab 1: Storyboard Approval Grid -->
+      <div id="tab-storyboard" class="tab-content active">
+        <div class="tab-toolbar">
+          <div class="toolbar-info">
+            <span id="approval-progress">Approved: 0 / 0</span>
+          </div>
+          <div class="toolbar-actions">
+            <button id="btn-gen-keyframes" class="btn btn-primary">Generate All Keyframes</button>
+            <button id="btn-approve-all" class="btn btn-outline-success">Approve All</button>
+          </div>
+        </div>
+
+        <div id="storyboard-grid" class="storyboard-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- Tab 2: Motion & Screening Room -->
+      <div id="tab-screening" class="tab-content">
+        <div class="tab-toolbar">
+          <div class="toolbar-actions">
+            <button id="btn-render-motion" class="btn btn-primary">Render Motion (Stage 2)</button>
+            <button id="btn-assemble-master" class="btn btn-secondary">Assemble Master Cut (Stage 3)</button>
+            <button id="btn-run-all" class="btn btn-success">Run All Pipeline</button>
+          </div>
+        </div>
+
+        <div class="screening-room">
+          <div class="master-player-card">
+            <h3>Master Cut Assembly</h3>
+            <div class="player-wrapper">
+              <video id="master-video" controls playsinline preload="metadata">
+                Your browser does not support HTML5 video.
+              </video>
+            </div>
+            <div class="player-controls">
+              <a id="btn-download-master" class="btn btn-sm btn-outline" download="master_cut.mp4" href="#">Download Master MP4</a>
+              <span id="master-cut-status" class="status-note">No master cut assembled yet.</span>
+            </div>
+          </div>
+
+          <div class="shot-clips-section">
+            <h3>Rendered Shot Clips</h3>
+            <div id="shot-clips-grid" class="shot-clips-grid">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Dock: Live Terminal Logs -->
+  <footer class="terminal-dock">
+    <div class="dock-header">
+      <div class="dock-title">
+        <span class="pulse-indicator">●</span> TERMINAL LOGS (SSE Stream)
+      </div>
+      <div class="dock-actions">
+        <label class="checkbox-label">
+          <input type="checkbox" id="auto-scroll-toggle" checked> Auto-scroll
+        </label>
+        <button id="btn-clear-logs" class="btn btn-xs btn-outline">Clear</button>
+        <button id="btn-toggle-terminal" class="btn btn-xs btn-outline">Collapse</button>
+      </div>
+    </div>
+    <div id="terminal-logs" class="terminal-body">
+      <!-- Streamed log lines -->
+    </div>
+  </footer>
+
+  <!-- Modal: New Project -->
+  <div id="modal-new-project" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Create New Project</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-project-name">Project Name (Alphanumeric / Underscore)</label>
+          <input type="text" id="new-project-name" placeholder="cyberpunk_short_01" required>
+        </div>
+        <div class="form-group">
+          <label for="new-project-style">Initial Style Profile</label>
+          <select id="new-project-style"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline modal-cancel">Cancel</button>
+        <button id="btn-submit-new-project" class="btn btn-primary">Create Project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Look-Dev & Post-FX Config -->
+  <div id="modal-config" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Look-Dev & Post-FX Configuration</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">Tweak look-dev settings directly. Re-run Stage 3 Assemble to immediately audition changes.</p>
+        <div class="form-group">
+          <label for="cfg-keyframe-backend">Stage 1 Backend</label>
+          <select id="cfg-keyframe-backend">
+            <option value="sdxl_lightning">SDXL-Lightning (4-step, FP16)</option>
+            <option value="sd15_lora">SD 1.5 + LoRA</option>
+            <option value="mock">Mock Backend (0 MB VRAM)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="cfg-lora-path">Optional Custom LoRA Path (.safetensors)</label>
+          <input type="text" id="cfg-lora-path" placeholder="C:/models/my_style.safetensors">
+        </div>
+        <div class="form-group">
+          <label for="cfg-lora-scale">LoRA Scale (0.1 - 2.0)</label>
+          <input type="number" id="cfg-lora-scale" step="0.1" value="1.0" min="0.1" max="2.0">
+        </div>
+        <hr class="modal-divider">
+        <h4>Stage 3 FFmpeg Look-Dev Post-FX</h4>
+        <div class="form-group">
+          <label for="cfg-stepped-fps">Stepped FPS (Animation on 2s)</label>
+          <input type="number" id="cfg-stepped-fps" placeholder="12 (leave blank or 0 for normal 24fps)">
+        </div>
+        <div class="form-group">
+          <label for="cfg-chromatic-px">Chromatic Aberration Shift (Pixels)</label>
+          <input type="number" id="cfg-chromatic-px" placeholder="2 (FFmpeg rgbashift, 0 for none)">
+        </div>
+        <div class="form-group">
+          <label for="cfg-lut-path">3D LUT Path (.cube / .png)</label>
+          <input type="text" id="cfg-lut-path" placeholder="Optional path to color LUT">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline modal-cancel">Cancel</button>
+        <button id="btn-save-config" class="btn btn-primary">Save Configuration</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Reroll Keyframe -->
+  <div id="modal-reroll" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Reroll Shot Keyframe</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="reroll-shot-id">
+        <div class="form-group">
+          <label for="reroll-prompt">Keyframe Prompt</label>
+          <textarea id="reroll-prompt" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="reroll-seed">Seed (leave blank for random)</label>
+          <input type="number" id="reroll-seed" placeholder="e.g. 42981">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline modal-cancel">Cancel</button>
+        <button id="btn-submit-reroll" class="btn btn-primary">Reroll Keyframe</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Lightbox Image Viewer -->
+  <div id="modal-lightbox" class="modal lightbox-modal">
+    <div class="lightbox-content">
+      <button class="lightbox-close">&times;</button>
+      <img id="lightbox-img" src="" alt="Full Resolution Keyframe">
+      <div id="lightbox-caption" class="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
