@@ -38,21 +38,35 @@ body.dark-theme {
 
 /* Header */
 .studio-header {
-  height: 52px;
+  min-height: 52px;
   background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  gap: 16px;
+  padding: 6px 14px;
+  gap: 8px 12px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
-.header-left, .header-right {
+.header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .logo {
@@ -62,7 +76,8 @@ body.dark-theme {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: 13.5px;
+  white-space: nowrap;
 }
 
 .logo-accent {
@@ -73,11 +88,27 @@ body.dark-theme {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .header-control-group label {
   color: var(--text-secondary);
   font-size: 12px;
+  white-space: nowrap;
+}
+
+#project-select {
+  max-width: 175px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#style-select {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 select, input[type="text"], input[type="number"], textarea {
@@ -407,18 +438,35 @@ input:checked + .slider:before { transform: translateX(16px); }
 }
 
 .tab-toolbar {
-  padding: 10px 16px;
+  padding: 8px 12px;
   background-color: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbar-info {
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .toolbar-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.tab-toolbar .btn {
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* Storyboard Grid (Tab 1) */

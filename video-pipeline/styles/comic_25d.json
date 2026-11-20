@@ -7,8 +7,8 @@
     "lora_path": null,
     "lora_scale": 1.0,
     "trigger_tokens": "",
-    "style_prompt": "hand-inked comic book art style, Spider-Verse graphic novel illustration, bold black ink outlines, sharp cel-shaded shadows, heavy ink crosshatching, visible Ben-Day halftone dots, expressive visible brushstrokes, vibrant pop-art rim lighting, subtle chromatic split, full-bleed widescreen composition",
-    "negative_prompt": "picture frame, framed artwork, canvas, white border, wall mockup, poster, comic panel border, margins, flat clipart, photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality"
+    "style_prompt": "vibrant full-color Spider-Verse movie still, rich neon magenta cyan orange lighting, painted 2.5D cel-shading, subtle colorful halftone dots, stylized animation",
+    "negative_prompt": "monochrome, grayscale, black and white, picture frame, framed artwork, canvas, white border, wall mockup, poster, comic panel border, margins, flat clipart, photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry, deformed, distorted, low quality"
   },
   "stage2": {
     "motion_backend": "ltx_video_2b",

@@ -360,16 +360,36 @@ async function applyStyle(styleName) {
 function renderScriptEditor() {
   if (!state.script) return;
 
-  document.getElementById("global-style-prompt").value = state.script.global_style_prompt || "";
-  document.getElementById("global-negative-prompt").value = state.script.negative_prompt || "";
-  document.getElementById("target-fps").value = state.script.target_fps || 24;
+  const manifestConfig = state.manifest?.config || {};
+  document.getElementById("global-style-prompt").value = manifestConfig.style_prompt || state.manifest?.global_style_prompt || state.script.global_style_prompt || "";
+  document.getElementById("global-negative-prompt").value = manifestConfig.negative_prompt || state.manifest?.negative_prompt || state.script.negative_prompt || "";
+  document.getElementById("target-fps").value = manifestConfig.target_fps || state.script.target_fps || 24;
 
   const container = document.getElementById("shots-container");
   container.innerHTML = "";
   const shots = state.script.shots || [];
   document.getElementById("shot-count-badge").textContent = `${shots.length} shots`;
 
+  const manifestShotsMap = {};
+  (state.manifest?.shots || []).forEach(ms => {
+    manifestShotsMap[ms.shot_id] = ms;
+  });
+
   shots.forEach((shot, index) => {
+    // Always refresh shot prompt and seed from manifest.json to prevent stale state after rerolls
+    const mShot = manifestShotsMap[shot.shot_id];
+    if (mShot) {
+      if (mShot.seed !== undefined && mShot.seed !== null) {
+        shot.seed = mShot.seed;
+      }
+      if (mShot.prompt !== undefined && mShot.prompt !== null) {
+        shot.prompt = mShot.prompt;
+      }
+      if (mShot.motion_prompt !== undefined && mShot.motion_prompt !== null) {
+        shot.motion_prompt = mShot.motion_prompt;
+      }
+    }
+
     const card = document.createElement("div");
     card.className = "shot-card";
     card.dataset.shotId = shot.shot_id;

@@ -136,6 +136,29 @@ def test_non_destructive_manifest_reconciliation(client, test_project_name):
     assert shot3["num_frames"] == 25, "1.0s did not snap to 8n+1 (25 frames)!"
 
 
+def test_update_script_syncs_manifest_config(client, test_project_name):
+    """Assert updating Global Style Prompt, negative prompt, and target_fps via /script syncs manifest.config."""
+    details = client.get(f"/api/projects/{test_project_name}").json()
+    script = details["script"]
+    test_style = "vibrant full-color Spider-Verse movie still, rich neon magenta cyan orange lighting"
+    test_neg = "monochrome, grayscale, black and white"
+    test_fps = 30
+    script["global_style_prompt"] = test_style
+    script["negative_prompt"] = test_neg
+    script["target_fps"] = test_fps
+
+    update_res = client.post(f"/api/projects/{test_project_name}/script", json={"script": script})
+    assert update_res.status_code == 200
+
+    reconciled = client.get(f"/api/projects/{test_project_name}").json()
+    manifest_cfg = reconciled["manifest"]["config"]
+    assert manifest_cfg["style_prompt"] == test_style
+    assert manifest_cfg["negative_prompt"] == test_neg
+    assert manifest_cfg["target_fps"] == test_fps
+    assert reconciled["manifest"]["global_style_prompt"] == test_style
+    assert reconciled["manifest"]["negative_prompt"] == test_neg
+
+
 def test_in_process_shot_actions(client, test_project_name):
     """Assert shot approval, rejection, and approve-all work in-process."""
     # Reject shot_002

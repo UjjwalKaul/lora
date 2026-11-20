@@ -382,10 +382,14 @@ def reconcile_manifest(proj_dir: Path, script_data: Dict[str, Any]) -> Dict[str,
             })
 
     manifest_data["shots"] = new_shots
+    manifest_cfg = manifest_data.setdefault("config", {})
     if "global_style_prompt" in script_data:
         manifest_data["global_style_prompt"] = script_data["global_style_prompt"]
+        manifest_cfg["style_prompt"] = script_data["global_style_prompt"]
     if "negative_prompt" in script_data:
         manifest_data["negative_prompt"] = script_data["negative_prompt"]
+        manifest_cfg["negative_prompt"] = script_data["negative_prompt"]
+    manifest_cfg["target_fps"] = target_fps
 
     return manifest_data
 

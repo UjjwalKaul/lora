@@ -207,18 +207,21 @@ class SDXLLightningBackend(KeyframeBackend):
             self.load(config.base_model, config.lora_path, config.lora_scale)
         import torch
 
-        # Build conditioned prompt from StyleProfile
+        # Build conditioned prompt: place color/style cues BEFORE scene details to prevent CLIP 77-token truncation
         prompt_parts = []
         if config.trigger_tokens:
-            prompt_parts.append(config.trigger_tokens)
-        prompt_parts.append(shot.prompt)
+            prompt_parts.append(config.trigger_tokens.strip())
         if config.style_prompt:
-            prompt_parts.append(config.style_prompt)
-        full_prompt = ", ".join(prompt_parts)
+            prompt_parts.append(config.style_prompt.strip())
+        if shot.prompt:
+            prompt_parts.append(shot.prompt.strip())
+        full_prompt = ", ".join(p for p in prompt_parts if p)
 
         # Generate at native 3:2 widescreen (1152x768 for SDXL, perfectly scaling to 768x512)
         gen_width = 1152 if config.target_width == 768 and config.target_height == 512 else config.target_width
         gen_height = 768 if config.target_width == 768 and config.target_height == 512 else config.target_height
+
+        logger.info(f"Generating keyframe for {shot.shot_id} [{gen_width}x{gen_height}, seed={shot.seed}]: '{full_prompt}'")
 
         generator = torch.Generator(device="cpu").manual_seed(shot.seed)
         image = self.pipe(
@@ -307,14 +310,17 @@ class SD15LoRABackend(KeyframeBackend):
             self.load(config.base_model, config.lora_path, config.lora_scale)
         import torch
 
-        # Build conditioned prompt from StyleProfile
+        # Build conditioned prompt: place color/style cues BEFORE scene details to prevent CLIP 77-token truncation
         prompt_parts = []
         if config.trigger_tokens:
-            prompt_parts.append(config.trigger_tokens)
-        prompt_parts.append(shot.prompt)
+            prompt_parts.append(config.trigger_tokens.strip())
         if config.style_prompt:
-            prompt_parts.append(config.style_prompt)
-        full_prompt = ", ".join(prompt_parts)
+            prompt_parts.append(config.style_prompt.strip())
+        if shot.prompt:
+            prompt_parts.append(shot.prompt.strip())
+        full_prompt = ", ".join(p for p in prompt_parts if p)
+
+        logger.info(f"Generating keyframe for {shot.shot_id} [{config.target_width}x{config.target_height}, seed={shot.seed}]: '{full_prompt}'")
 
         generator = torch.Generator(device="cpu").manual_seed(shot.seed)
         image = self.pipe(
