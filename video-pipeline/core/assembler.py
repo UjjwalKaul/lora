@@ -81,8 +81,44 @@ def assemble_timeline(
             f.write(f"file '{escaped_path}'\n")
 
     ffmpeg_bin = get_ffmpeg_exe()
+    post_fx = manifest.config.post_fx
 
-    # Step 1: Try zero-loss, zero-memory stream copy
+    # Check if Post-FX filters are requested by StyleProfile
+    fx_filters = []
+    if post_fx:
+        if post_fx.stepped_fps and post_fx.stepped_fps < manifest.config.target_fps:
+            # Drop intermediate frames and hold to create authentic 'on 2s' animation look
+            fx_filters.append(f"fps=fps={post_fx.stepped_fps},fps=fps={manifest.config.target_fps}")
+        if post_fx.chromatic_aberration_px and post_fx.chromatic_aberration_px > 0:
+            px = post_fx.chromatic_aberration_px
+            fx_filters.append(f"rgbashift=rh=-{px}:bv={px}:edge=smear")
+        if post_fx.lut_path and Path(post_fx.lut_path).exists():
+            lut_clean = str(Path(post_fx.lut_path).resolve()).replace("\\", "/")
+            fx_filters.append(f"lut3d=file='{lut_clean}'")
+
+    if fx_filters:
+        # StyleProfile specifies active Post-FX look-dev: execute direct filtered encode
+        filter_str = ",".join(fx_filters)
+        logger.info(f"Applying CPU Look-Dev Post-FX filtergraph: {filter_str}")
+        fx_cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_list_file.resolve()),
+            "-vf", filter_str,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", "18",
+            "-preset", "fast",
+            str(master_cut_path.resolve())
+        ]
+        res = subprocess.run(fx_cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"FFmpeg Post-FX assembly failed:\n{res.stderr}")
+        return master_cut_path
+
+    # Step 1: No Post-FX -> Try zero-loss, zero-memory stream copy
     copy_cmd = [
         ffmpeg_bin,
         "-y",

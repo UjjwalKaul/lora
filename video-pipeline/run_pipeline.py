@@ -22,7 +22,7 @@ from core.assembler import assemble_timeline
 from core.keyframe_backend import get_keyframe_backend
 from core.motion_backend import get_motion_backend
 from core.preflight import sanitize_keyframe_image, snap_to_8n_plus_1, validate_manifest_for_motion
-from core.schemas import ManifestSchema, ProjectConfig, ScriptSchema, ShotItem, ShotStatus
+from core.schemas import ManifestSchema, ProjectConfig, ScriptSchema, ShotItem, ShotStatus, StyleProfile
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("video_pipeline")
@@ -36,8 +36,13 @@ def get_project_dir(project_name: str) -> Path:
     return proj_dir
 
 
-def cmd_init(project_name: str, script_path: Optional[str] = None) -> ManifestSchema:
-    """Initialize project directory, copy or create script.json, and generate manifest.json."""
+def cmd_init(
+    project_name: str,
+    script_path: Optional[str] = None,
+    style_override: Optional[str] = None,
+    force_mock: bool = False
+) -> ManifestSchema:
+    """Initialize project directory, copy or create script.json, and generate manifest.json with StyleProfile."""
     proj_dir = get_project_dir(project_name)
     keyframes_dir = proj_dir / "keyframes"
     clips_dir = proj_dir / "clips"
@@ -65,10 +70,11 @@ def cmd_init(project_name: str, script_path: Optional[str] = None) -> ManifestSc
         script = ScriptSchema(
             project_name=project_name,
             version="1.0.0",
+            style_profile="photoreal_default",
             aspect_ratio="16:9",
             target_fps=24,
-            keyframe_backend="mock",
-            motion_backend="mock",
+            keyframe_backend=None,
+            motion_backend=None,
             global_style_prompt="cinematic film still, 35mm lens, photorealistic, high detail",
             negative_prompt="blurry, distorted, low quality, artifacts",
             shots=[
@@ -96,17 +102,39 @@ def cmd_init(project_name: str, script_path: Optional[str] = None) -> ManifestSc
             f.write(script.model_dump_json(indent=2))
         logger.info(f"Created default template script at {dest_script_file}")
 
+    # Load active StyleProfile
+    profile_name = style_override or script.style_profile or "photoreal_default"
+    logger.info(f"Resolving StyleProfile: '{profile_name}'...")
+    profile = StyleProfile.load_profile(profile_name)
+
+    # Merge StyleProfile with any explicit overrides in script.json or CLI flags
+    if force_mock:
+        kf_backend = "mock"
+        mot_backend = "mock"
+    else:
+        kf_backend = script.keyframe_backend if script.keyframe_backend is not None else profile.stage1.keyframe_backend
+        mot_backend = script.motion_backend if script.motion_backend is not None else profile.stage2.motion_backend
+
+    lora_path = script.lora_path if script.lora_path is not None else profile.stage1.lora_path
+    lora_scale = script.lora_scale if script.lora_scale is not None else profile.stage1.lora_scale
+
     config = ProjectConfig(
         target_width=768,
         target_height=512,
         target_fps=script.target_fps,
         max_frames=49,
-        keyframe_backend=script.keyframe_backend,
-        motion_backend=script.motion_backend,
-        lora_path=script.lora_path,
-        lora_scale=script.lora_scale,
-        inference_steps=8,
-        guidance_scale=3.0
+        style_profile=profile.name,
+        keyframe_backend=kf_backend,
+        motion_backend=mot_backend,
+        base_model=profile.stage1.base_model,
+        lora_path=lora_path,
+        lora_scale=lora_scale,
+        trigger_tokens=profile.stage1.trigger_tokens,
+        style_prompt=profile.stage1.style_prompt,
+        motion_style_prompt=profile.stage2.motion_style_prompt,
+        inference_steps=profile.stage2.inference_steps or 8,
+        guidance_scale=profile.stage2.guidance_scale or 3.0,
+        post_fx=profile.post_fx
     )
 
     shot_items = []
@@ -134,17 +162,17 @@ def cmd_init(project_name: str, script_path: Optional[str] = None) -> ManifestSc
         version="1.0.0",
         pipeline_stage="initialized",
         config=config,
-        global_style_prompt=script.global_style_prompt,
-        negative_prompt=script.negative_prompt,
+        global_style_prompt=script.global_style_prompt or profile.stage1.style_prompt,
+        negative_prompt=script.negative_prompt or profile.stage1.negative_prompt,
         shots=shot_items
     )
     manifest.save(manifest_file)
-    logger.info(f"Initialized project manifest: {manifest_file}")
+    logger.info(f"Initialized project manifest: {manifest_file} (Style: {profile.name})")
     return manifest
 
 
 def cmd_status(project_name: str) -> None:
-    """Print clean CLI table showing project status and shot review state."""
+    """Print clean CLI table showing project status, style profile, and shot review state."""
     proj_dir = get_project_dir(project_name)
     manifest_file = proj_dir / "manifest.json"
     if not manifest_file.exists():
@@ -152,10 +180,26 @@ def cmd_status(project_name: str) -> None:
         return
 
     manifest = ManifestSchema.load(manifest_file)
+    cfg = manifest.config
+
+    post_fx_str = "None (-c copy stream copy)"
+    if cfg.post_fx:
+        fx = []
+        if cfg.post_fx.stepped_fps:
+            fx.append(f"stepped_fps={cfg.post_fx.stepped_fps}")
+        if cfg.post_fx.chromatic_aberration_px:
+            fx.append(f"rgbashift={cfg.post_fx.chromatic_aberration_px}px")
+        if cfg.post_fx.lut_path:
+            fx.append(f"lut={cfg.post_fx.lut_path}")
+        post_fx_str = ", ".join(fx) if fx else "None"
+
     print("=" * 80)
     print(f"  PROJECT: {manifest.project_name.upper()} | STAGE: {manifest.pipeline_stage.upper()}")
-    print(f"  Config: {manifest.config.target_width}x{manifest.config.target_height} @ {manifest.config.target_fps}fps | "
-          f"Keyframes: {manifest.config.keyframe_backend} | Motion: {manifest.config.motion_backend}")
+    print(f"  Style Profile: {cfg.style_profile.upper()} | Keyframe: {cfg.keyframe_backend} | Motion: {cfg.motion_backend}")
+    print(f"  Resolution: {cfg.target_width}x{cfg.target_height} @ {cfg.target_fps}fps | Max Frames: {cfg.max_frames}")
+    if cfg.trigger_tokens:
+        print(f"  Trigger Tokens: [{cfg.trigger_tokens}] | LoRA: {cfg.lora_path or 'None'} (Scale: {cfg.lora_scale})")
+    print(f"  Post-FX Look-Dev: {post_fx_str}")
     print("=" * 80)
     print(f"{'INDEX':<6} {'SHOT ID':<12} {'STATUS':<16} {'MOTION':<18} {'FRAMES':<8} {'KEYFRAME':<12} {'CLIP'}")
     print("-" * 80)
@@ -382,6 +426,8 @@ def main():
     parser.add_argument("--stage", choices=["init", "keyframes", "status", "approve", "reject", "reroll", "motion", "assemble", "run-all"],
                         help="Pipeline stage or command to execute")
     parser.add_argument("--script", help="Path to input script.json (for init)")
+    parser.add_argument("--style", help="StyleProfile name or path to override script style (e.g. photoreal_default, comic_25d)")
+    parser.add_argument("--mock", action="store_true", help="Force mock keyframe and motion backends for testing (0 MB VRAM)")
     parser.add_argument("--shot-id", help="Target shot ID (for approve, reject, reroll)")
     parser.add_argument("--approve-all", action="store_true", help="Approve all shots")
     parser.add_argument("--seed", type=int, help="Seed value (for reroll)")
@@ -404,7 +450,7 @@ def main():
     # Route public CLI commands
     stage = args.stage or "status"
     if stage == "init":
-        cmd_init(args.project, args.script)
+        cmd_init(args.project, args.script, args.style, force_mock=args.mock)
     elif stage == "keyframes":
         cmd_keyframes(args.project)
     elif stage == "status":

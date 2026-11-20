@@ -1,12 +1,13 @@
 {
   "project_name": "integration_test_project",
   "version": "1.0.0",
+  "style_profile": "photoreal_default",
   "aspect_ratio": "16:9",
   "target_fps": 24,
-  "keyframe_backend": "mock",
-  "motion_backend": "mock",
+  "keyframe_backend": null,
+  "motion_backend": null,
   "lora_path": null,
-  "lora_scale": 1.0,
+  "lora_scale": null,
   "global_style_prompt": "cinematic film still, 35mm lens, photorealistic, high detail",
   "negative_prompt": "blurry, distorted, low quality, artifacts",
   "shots": [

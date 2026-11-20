@@ -105,15 +105,30 @@ class MockKeyframeBackend(KeyframeBackend):
         draw.line([(cx, cy - 14), (cx, cy + 14)], fill=(0, 210, 255, 128), width=1)
 
         # Header metadata overlay
-        header_text = f"MOCK STORYBOARD | {shot.shot_id.upper()} | {shot.shot_type.upper()} | SEED: {shot.seed}"
+        header_text = f"MOCK STORYBOARD | {shot.shot_id.upper()} | {shot.shot_type.upper()} | STYLE: {config.style_profile.upper()} | SEED: {shot.seed}"
         draw.text((frame_margin_x + 12, frame_margin_y + 10), header_text, fill=(0, 220, 255))
 
-        motion_text = f"CAMERA MOTION: {shot.camera_motion.upper()} | DURATION: {shot.duration_sec:.1f}s ({shot.num_frames} frames @ {config.target_fps}fps)"
+        style_info = []
+        if config.trigger_tokens:
+            style_info.append(f"TRIGGER: [{config.trigger_tokens}]")
+        if config.post_fx and config.post_fx.stepped_fps:
+            style_info.append(f"STEPPED: {config.post_fx.stepped_fps}fps")
+        if config.post_fx and config.post_fx.chromatic_aberration_px:
+            style_info.append(f"RGBASHIFT: {config.post_fx.chromatic_aberration_px}px")
+        
+        info_str = " | ".join(style_info) if style_info else "CLEAN PASSTHROUGH"
+        motion_text = f"MOTION: {shot.camera_motion.upper()} | {shot.duration_sec:.1f}s ({shot.num_frames} frames @ {config.target_fps}fps) | {info_str}"
         draw.text((frame_margin_x + 12, frame_margin_y + 30), motion_text, fill=(160, 190, 220))
 
-        # Prompt text (simple wrap)
+        # Prompt text with trigger tokens and style additions
+        full_prompt = shot.prompt
+        if config.trigger_tokens:
+            full_prompt = f"{config.trigger_tokens}, {full_prompt}"
+        if config.style_prompt:
+            full_prompt = f"{full_prompt}, {config.style_prompt}"
+
         prompt_prefix = "PROMPT: "
-        prompt_display = prompt_prefix + shot.prompt
+        prompt_display = prompt_prefix + full_prompt
         # Simple word wrap
         words = prompt_display.split()
         lines = []
@@ -141,7 +156,6 @@ class SDXLLightningBackend(KeyframeBackend):
     """
     Stage 1 SDXL-Lightning implementation (~2.8 GB VRAM).
     ByteDance/SDXL-Lightning 4-step UNet with sequential CPU offload.
-    (Weights to be loaded in Batch 2).
     """
 
     def __init__(self):
@@ -151,11 +165,11 @@ class SDXLLightningBackend(KeyframeBackend):
     def backend_name(self) -> str:
         return "sdxl_lightning"
 
-    def load(self):
+    def load(self, base_model: Optional[str] = None):
         import torch
         from diffusers import AutoPipelineForText2Image
-        logger.info("Loading SDXL-Lightning 4-step pipeline in FP16...")
-        base_id = "stabilityai/stable-diffusion-xl-base-1.0"
+        logger.info("Loading SDXL-Lightning 4-step pipeline in FP16 with sequential CPU offload...")
+        base_id = base_model or "stabilityai/stable-diffusion-xl-base-1.0"
         repo_id = "ByteDance/SDXL-Lightning"
         self.pipe = AutoPipelineForText2Image.from_pretrained(
             base_id,
@@ -174,11 +188,22 @@ class SDXLLightningBackend(KeyframeBackend):
         output_path: Path | str
     ) -> Path:
         if self.pipe is None:
-            self.load()
+            self.load(config.base_model)
         import torch
+
+        # Build conditioned prompt from StyleProfile
+        prompt_parts = []
+        if config.trigger_tokens:
+            prompt_parts.append(config.trigger_tokens)
+        prompt_parts.append(shot.prompt)
+        if config.style_prompt:
+            prompt_parts.append(config.style_prompt)
+        full_prompt = ", ".join(prompt_parts)
+
         generator = torch.Generator(device="cpu").manual_seed(shot.seed)
         image = self.pipe(
-            prompt=shot.prompt,
+            prompt=full_prompt,
+            negative_prompt=config.negative_prompt or None,
             num_inference_steps=4,
             guidance_scale=0.0,
             generator=generator,
@@ -190,13 +215,21 @@ class SDXLLightningBackend(KeyframeBackend):
         image.save(out_file)
         return out_file
 
+    def unload(self):
+        import gc
+        import torch
+        del self.pipe
+        self.pipe = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
 
 class SD15LoRABackend(KeyframeBackend):
     """
     Stage 1 SD 1.5 + LoRA implementation (~2.2 GB VRAM).
     Enables reusing custom style/character LoRAs (such as Marvel LoRA)
-    with sequential CPU offload for safe 6 GB VRAM operation.
-    (Weights to be loaded in Batch 2).
+    with sequential CPU offload and weight fusion for safe 6 GB VRAM operation.
     """
 
     def __init__(self):
@@ -206,20 +239,20 @@ class SD15LoRABackend(KeyframeBackend):
     def backend_name(self) -> str:
         return "sd15_lora"
 
-    def load(self, lora_path: Optional[str] = None, lora_scale: float = 1.0):
+    def load(self, base_model: Optional[str] = None, lora_path: Optional[str] = None, lora_scale: float = 1.0):
         import torch
         from diffusers import StableDiffusionPipeline
         logger.info("Loading SD 1.5 pipeline in FP16 with sequential CPU offload...")
-        model_id = "runwayml/stable-diffusion-v1-5"
+        model_id = base_model or "runwayml/stable-diffusion-v1-5"
         self.pipe = StableDiffusionPipeline.from_pretrained(
             model_id,
             torch_dtype=torch.float16,
             safety_checker=None
         )
         if lora_path and Path(lora_path).exists():
-            logger.info(f"Attaching LoRA weights from {lora_path} (scale: {lora_scale})...")
+            logger.info(f"Attaching and fusing LoRA weights from {lora_path} (scale: {lora_scale})...")
             self.pipe.load_lora_weights(lora_path, adapter_name="default")
-            self.pipe.set_adapters(["default"], adapter_weights=[lora_scale])
+            self.pipe.fuse_lora(lora_scale=lora_scale)
         self.pipe.enable_sequential_cpu_offload()
         self.pipe.vae.enable_slicing()
 
@@ -230,11 +263,22 @@ class SD15LoRABackend(KeyframeBackend):
         output_path: Path | str
     ) -> Path:
         if self.pipe is None:
-            self.load(config.lora_path, config.lora_scale)
+            self.load(config.base_model, config.lora_path, config.lora_scale)
         import torch
+
+        # Build conditioned prompt from StyleProfile
+        prompt_parts = []
+        if config.trigger_tokens:
+            prompt_parts.append(config.trigger_tokens)
+        prompt_parts.append(shot.prompt)
+        if config.style_prompt:
+            prompt_parts.append(config.style_prompt)
+        full_prompt = ", ".join(prompt_parts)
+
         generator = torch.Generator(device="cpu").manual_seed(shot.seed)
         image = self.pipe(
-            prompt=shot.prompt,
+            prompt=full_prompt,
+            negative_prompt=config.negative_prompt or None,
             num_inference_steps=25,
             guidance_scale=7.0,
             generator=generator,
@@ -245,6 +289,15 @@ class SD15LoRABackend(KeyframeBackend):
         out_file.parent.mkdir(parents=True, exist_ok=True)
         image.save(out_file)
         return out_file
+
+    def unload(self):
+        import gc
+        import torch
+        del self.pipe
+        self.pipe = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 def get_keyframe_backend(name: str) -> KeyframeBackend:

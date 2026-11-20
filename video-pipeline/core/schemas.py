@@ -1,10 +1,11 @@
 """
 Data contracts and schemas for the production video generation pipeline.
-Includes Pydantic models for script.json, manifest.json, and shot items.
+Includes Pydantic models for script.json, manifest.json, shot items, and StyleProfiles.
 """
 
 from __future__ import annotations
 
+import json
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
@@ -31,6 +32,65 @@ class CameraMotion(str, Enum):
     ZOOM_OUT = "zoom_out"
 
 
+class PostFxConfig(BaseModel):
+    """CPU-only FFmpeg look-dev post-processing options."""
+    stepped_fps: Optional[int] = None  # e.g. 12 (animates on 2s within a 24fps container)
+    chromatic_aberration_px: Optional[int] = None  # e.g. 2 (FFmpeg rgbashift)
+    lut_path: Optional[str] = None  # Optional 3D LUT (.cube / .png)
+
+
+class Stage1StyleConfig(BaseModel):
+    """Style configuration for Stage 1 Keyframe Generation."""
+    keyframe_backend: str = "sdxl_lightning"  # "sd15_lora" | "sdxl_lightning" | "mock"
+    base_model: str = "ByteDance/SDXL-Lightning"
+    lora_path: Optional[str] = None
+    lora_scale: float = 1.0
+    trigger_tokens: Optional[str] = ""
+    style_prompt: Optional[str] = ""
+    negative_prompt: Optional[str] = ""
+
+
+class Stage2StyleConfig(BaseModel):
+    """Style configuration for Stage 2 Motion Synthesis."""
+    motion_backend: str = "ltx_video_2b"  # "ltx_video_2b" | "mock"
+    motion_style_prompt: Optional[str] = ""
+    inference_steps: Optional[int] = 8
+    guidance_scale: Optional[float] = 3.0
+
+
+class StyleProfile(BaseModel):
+    """
+    Style-agnostic preset controlling all three pipeline stages.
+    Loaded from video-pipeline/styles/<name>.json.
+    """
+    name: str
+    description: Optional[str] = ""
+    stage1: Stage1StyleConfig = Field(default_factory=Stage1StyleConfig)
+    stage2: Stage2StyleConfig = Field(default_factory=Stage2StyleConfig)
+    post_fx: Optional[PostFxConfig] = None
+
+    @classmethod
+    def load_profile(cls, name_or_path: str, styles_dir: Optional[Path] = None) -> StyleProfile:
+        path = Path(name_or_path)
+        if not path.exists() and styles_dir:
+            candidate = styles_dir / f"{name_or_path}.json" if not name_or_path.endswith(".json") else styles_dir / name_or_path
+            if candidate.exists():
+                path = candidate
+
+        if not path.exists():
+            default_dir = Path(__file__).resolve().parent.parent / "styles"
+            candidate = default_dir / f"{name_or_path}.json" if not name_or_path.endswith(".json") else default_dir / name_or_path
+            if candidate.exists():
+                path = candidate
+
+        if not path.exists():
+            raise FileNotFoundError(f"StyleProfile not found at '{name_or_path}' (searched in {styles_dir or Path(__file__).resolve().parent.parent / 'styles'})")
+
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.model_validate(data)
+
+
 class ShotInput(BaseModel):
     """Input definition for a shot inside script.json."""
     shot_id: str
@@ -47,12 +107,13 @@ class ScriptSchema(BaseModel):
     """Structure for input story script (script.json)."""
     project_name: str
     version: str = "1.0.0"
+    style_profile: Optional[str] = "photoreal_default"
     aspect_ratio: str = "16:9"
     target_fps: int = 24
-    keyframe_backend: str = "mock"  # "mock", "sdxl_lightning", "sd15_lora"
-    motion_backend: str = "mock"    # "mock", "ltx_video_2b"
-    lora_path: Optional[str] = None
-    lora_scale: float = 1.0
+    keyframe_backend: Optional[str] = None  # If set, overrides style_profile
+    motion_backend: Optional[str] = None    # If set, overrides style_profile
+    lora_path: Optional[str] = None         # If set, overrides style_profile
+    lora_scale: Optional[float] = None
     global_style_prompt: Optional[str] = ""
     negative_prompt: Optional[str] = ""
     shots: List[ShotInput] = Field(default_factory=list)
@@ -83,12 +144,18 @@ class ProjectConfig(BaseModel):
     target_height: int = 512
     target_fps: int = 24
     max_frames: int = 49
+    style_profile: str = "photoreal_default"
     keyframe_backend: str = "mock"
     motion_backend: str = "mock"
+    base_model: Optional[str] = None
     lora_path: Optional[str] = None
     lora_scale: float = 1.0
+    trigger_tokens: Optional[str] = ""
+    style_prompt: Optional[str] = ""
+    motion_style_prompt: Optional[str] = ""
     inference_steps: int = 8
     guidance_scale: float = 3.0
+    post_fx: Optional[PostFxConfig] = None
 
 
 class ManifestSchema(BaseModel):

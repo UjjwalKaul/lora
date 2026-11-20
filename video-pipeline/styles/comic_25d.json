@@ -1,0 +1,24 @@
+{
+  "name": "comic_25d",
+  "description": "Spider-Verse-inspired stylized aesthetic with stepped frame rate and chromatic aberration",
+  "stage1": {
+    "keyframe_backend": "sd15_lora",
+    "base_model": "runwayml/stable-diffusion-v1-5",
+    "lora_path": "c:/Users/ujjwa/Desktop/lora/marvel_lora",
+    "lora_scale": 1.0,
+    "trigger_tokens": "mrvl style",
+    "style_prompt": "bold ink comic art, halftone screen print patterns, vibrant expressive comic colors, dynamic graphic illustration, comic panel framing",
+    "negative_prompt": "photorealistic, photograph, raw photo, 3d render, smooth CGI shading, blurry"
+  },
+  "stage2": {
+    "motion_backend": "ltx_video_2b",
+    "motion_style_prompt": "snappy comic animation motion, stylized kinetic action, dramatic shutter",
+    "inference_steps": 8,
+    "guidance_scale": 3.5
+  },
+  "post_fx": {
+    "stepped_fps": 12,
+    "chromatic_aberration_px": 2,
+    "lut_path": null
+  }
+}

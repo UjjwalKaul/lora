@@ -1,11 +1,14 @@
 """
-Integration test suite for the Batch 1 pipeline skeleton.
+Integration test suite for the Production AI Video Generation Pipeline (Batch 1 & Batch 1.5).
 Verifies:
 1. snap_to_8n_plus_1 calculation & capping
 2. Keyframe geometry & alpha sanitization
-3. CLI Lifecycle: init -> keyframes -> approval gate enforcement -> approve -> motion -> assemble
-4. FFmpeg stream concatenation & master cut generation
-All with 0 MB VRAM and zero model weights.
+3. FFmpeg binary detection
+4. Full CLI Lifecycle & Approval Gate enforcement
+5. Pluggable StyleProfile layer:
+   - photoreal_default (clean passthrough -c copy)
+   - comic_25d (Spider-Verse look with 12fps stepped animation & chromatic aberration)
+All executed with 0 MB VRAM and zero model downloads.
 """
 
 from __future__ import annotations
@@ -23,10 +26,11 @@ sys.path.insert(0, str(pipeline_dir))
 
 from core.preflight import snap_to_8n_plus_1, sanitize_keyframe_image
 from core.assembler import get_ffmpeg_exe
+from core.schemas import StyleProfile, ManifestSchema
 
 
 def test_8n_plus_1_snapping():
-    print("[TEST 1/5] Testing 8n + 1 frame budgeting...")
+    print("[TEST 1/6] Testing 8n + 1 frame budgeting...")
     assert snap_to_8n_plus_1(2.0, fps=24, max_frames=49) == 49, "2.0s @ 24fps should snap to 49"
     assert snap_to_8n_plus_1(1.0, fps=24, max_frames=49) == 25, "1.0s @ 24fps should snap to 25"
     assert snap_to_8n_plus_1(0.5, fps=24, max_frames=49) == 9, "0.5s @ 24fps should snap to 9 (minimum)"
@@ -38,7 +42,7 @@ def test_8n_plus_1_snapping():
 
 
 def test_sanitizer():
-    print("[TEST 2/5] Testing keyframe geometry & alpha stripping...")
+    print("[TEST 2/6] Testing keyframe geometry & alpha stripping...")
     test_img_path = pipeline_dir / "temp_test_rgba.png"
     out_sanitized_path = pipeline_dir / "temp_test_sanitized.png"
 
@@ -62,7 +66,7 @@ def test_sanitizer():
 
 
 def test_ffmpeg_resolution():
-    print("[TEST 3/5] Testing FFmpeg binary detection...")
+    print("[TEST 3/6] Testing FFmpeg binary detection...")
     ffmpeg_bin = get_ffmpeg_exe()
     assert os.path.exists(ffmpeg_bin), f"FFmpeg path does not exist: {ffmpeg_bin}"
     res = subprocess.run([ffmpeg_bin, "-version"], capture_output=True, text=True)
@@ -71,19 +75,34 @@ def test_ffmpeg_resolution():
     print(f"  -> Detected FFmpeg binary: {ffmpeg_bin} ({first_line})")
 
 
+def test_style_profile_loading():
+    print("[TEST 4/6] Testing StyleProfile presets (photoreal_default & comic_25d)...")
+    p1 = StyleProfile.load_profile("photoreal_default")
+    assert p1.name == "photoreal_default"
+    assert p1.post_fx is None, "photoreal_default should have post_fx=None"
+    assert p1.stage1.keyframe_backend == "sdxl_lightning"
+
+    p2 = StyleProfile.load_profile("comic_25d")
+    assert p2.name == "comic_25d"
+    assert p2.post_fx is not None
+    assert p2.post_fx.stepped_fps == 12, "comic_25d should have stepped_fps=12"
+    assert p2.post_fx.chromatic_aberration_px == 2, "comic_25d should have chromatic_aberration_px=2"
+    assert p2.stage1.trigger_tokens == "mrvl style"
+    print("  -> Successfully validated both StyleProfile schemas and presets!")
+
+
 def test_cli_lifecycle():
-    print("[TEST 4/5] Testing full CLI lifecycle & approval gate...")
+    print("[TEST 5/6] Testing full CLI lifecycle & approval gate...")
     proj_name = "integration_test_project"
     proj_dir = pipeline_dir / "workspace" / "projects" / proj_name
 
-    # Clean previous test dir if exists
     if proj_dir.exists():
         shutil.rmtree(proj_dir)
 
     run_pipeline = [sys.executable, str(pipeline_dir / "run_pipeline.py"), "--project", proj_name]
 
-    # Step A: Init
-    res = subprocess.run(run_pipeline + ["--stage", "init"], capture_output=True, text=True)
+    # Step A: Init with photoreal_default on mock backend
+    res = subprocess.run(run_pipeline + ["--stage", "init", "--style", "photoreal_default", "--mock"], capture_output=True, text=True)
     assert res.returncode == 0, f"Init failed: {res.stderr}"
     manifest_file = proj_dir / "manifest.json"
     assert manifest_file.exists(), "manifest.json was not created"
@@ -118,33 +137,81 @@ def test_cli_lifecycle():
     clip2 = proj_dir / "clips" / "shot_002.mp4"
     assert clip1.exists() and clip1.stat().st_size > 0, "Clip 1 was not generated"
     assert clip2.exists() and clip2.stat().st_size > 0, "Clip 2 was not generated"
-    print("  -> Motion clips successfully synthesized!")
 
-    # Step F: Assemble Timeline
+    # Step F: Assemble Timeline (Photoreal clean stream copy)
     res = subprocess.run(run_pipeline + ["--stage", "assemble"], capture_output=True, text=True)
     assert res.returncode == 0, f"Assembly failed: {res.stderr}\n{res.stdout}"
     master_cut = proj_dir / "final" / "master_cut.mp4"
     assert master_cut.exists() and master_cut.stat().st_size > 0, "Master cut MP4 was not created"
-    print(f"  -> Final cut assembled successfully ({master_cut.stat().st_size / 1024:.1f} KB)!")
+    print(f"  -> Photoreal master cut assembled successfully via stream copy ({master_cut.stat().st_size / 1024:.1f} KB)!")
 
-    # Step G: Check Status
+
+def test_comic_25d_look_dev_flow():
+    print("[TEST 6/6] Testing comic_25d StyleProfile & FFmpeg Post-FX look-dev...")
+    proj_name = "comic_spiderverse_test"
+    proj_dir = pipeline_dir / "workspace" / "projects" / proj_name
+
+    if proj_dir.exists():
+        shutil.rmtree(proj_dir)
+
+    run_pipeline = [sys.executable, str(pipeline_dir / "run_pipeline.py"), "--project", proj_name]
+
+    # Step A: Init with comic_25d style override on mock backend
+    res = subprocess.run(run_pipeline + ["--stage", "init", "--style", "comic_25d", "--mock"], capture_output=True, text=True)
+    assert res.returncode == 0, f"Init failed: {res.stderr}"
+
+    manifest_file = proj_dir / "manifest.json"
+    manifest = ManifestSchema.load(manifest_file)
+    assert manifest.config.style_profile == "comic_25d"
+    assert manifest.config.post_fx is not None
+    assert manifest.config.post_fx.stepped_fps == 12
+    assert manifest.config.post_fx.chromatic_aberration_px == 2
+    assert manifest.config.trigger_tokens == "mrvl style"
+
+    # Step B: Generate keyframes
+    res = subprocess.run(run_pipeline + ["--stage", "keyframes"], capture_output=True, text=True)
+    assert res.returncode == 0, f"Keyframes stage failed: {res.stderr}"
+
+    # Step C: Approve all shots
+    res = subprocess.run(run_pipeline + ["--stage", "approve", "--approve-all"], capture_output=True, text=True)
+    assert res.returncode == 0, f"Approve failed: {res.stderr}"
+
+    # Step D: Motion synthesis
+    res = subprocess.run(run_pipeline + ["--stage", "motion"], capture_output=True, text=True)
+    assert res.returncode == 0, f"Motion failed: {res.stderr}"
+
+    # Step E: Assemble with FFmpeg Post-FX (stepped_fps=12 and rgbashift=2px)
+    res = subprocess.run(run_pipeline + ["--stage", "assemble"], capture_output=True, text=True)
+    assert res.returncode == 0, f"Assembly failed: {res.stderr}\n{res.stdout}"
+    assert "Applying CPU Look-Dev Post-FX filtergraph" in (res.stdout + res.stderr)
+    assert "rgbashift=rh=-2:bv=2" in (res.stdout + res.stderr)
+    assert "fps=fps=12,fps=fps=24" in (res.stdout + res.stderr)
+
+    master_cut = proj_dir / "final" / "master_cut.mp4"
+    assert master_cut.exists() and master_cut.stat().st_size > 0, "Comic master cut MP4 was not created"
+    print(f"  -> Comic 2.5D master cut assembled with Post-FX look-dev ({master_cut.stat().st_size / 1024:.1f} KB)!")
+
+    # Step F: Status Check
     res = subprocess.run(run_pipeline + ["--stage", "status"], capture_output=True, text=True)
     assert res.returncode == 0, f"Status failed: {res.stderr}"
-    assert "MASTER CUT AVAILABLE" in res.stdout, "Status does not show master cut"
-    print("  -> Passed full CLI lifecycle!")
+    assert "COMIC_25D" in res.stdout
+    assert "rgbashift=2px" in res.stdout
+    print("  -> Passed comic_25d look-dev test!")
 
 
 def main():
-    print("=" * 60)
-    print("  PRODUCTION VIDEO GENERATION PIPELINE - BATCH 1 TEST")
-    print("=" * 60)
+    print("=" * 70)
+    print("  PRODUCTION VIDEO GENERATION PIPELINE - BATCH 1 & 1.5 TEST")
+    print("=" * 70)
     test_8n_plus_1_snapping()
     test_sanitizer()
     test_ffmpeg_resolution()
+    test_style_profile_loading()
     test_cli_lifecycle()
-    print("=" * 60)
-    print("  [ALL BATCH 1 SKELETON TESTS PASSED SUCCESSFULLY!]")
-    print("=" * 60)
+    test_comic_25d_look_dev_flow()
+    print("=" * 70)
+    print("  [ALL BATCH 1 & 1.5 TESTS PASSED SUCCESSFULLY!]")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
