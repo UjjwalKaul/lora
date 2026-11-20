@@ -336,22 +336,6 @@ class LTXVideoBackend(MotionBackend):
             torch.cuda.empty_cache()
 
         return out_clip
-        export_to_video(video_frames, str(out_clip), fps=config.target_fps)
-
-        # Cleanup
-        del pipe, transformer, vae, prompt_embeds_cuda, prompt_mask_cuda, video_frames
-        if "negative_prompt_embeds" in pipe_kwargs:
-            del pipe_kwargs["negative_prompt_embeds"], pipe_kwargs["negative_prompt_attention_mask"]
-        del prompt_embeds, prompt_attention_mask
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        return out_clip
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        return out_clip
 
 
 def get_motion_backend(name: str) -> MotionBackend:
