@@ -1,0 +1,2 @@
+file 'C:/Users/ujjwa/Desktop/lora/video-pipeline/workspace/projects/integration_test_project/clips/shot_001.mp4'
+file 'C:/Users/ujjwa/Desktop/lora/video-pipeline/workspace/projects/integration_test_project/clips/shot_002.mp4'
