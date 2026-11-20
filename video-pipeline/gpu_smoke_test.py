@@ -157,6 +157,58 @@ def run_smoke_test():
     master_path = proj_dir / "final" / "master_cut.mp4"
     print(f"  -> Final Cut Assembled in {stage3_time:.2f}s at: {master_path}")
 
+    # -------------------------------------------------------------
+    # Step 5: Structural Verification (MAE / SSIM & 2x2 Contact Sheet)
+    # -------------------------------------------------------------
+    print("\n[STEP 5/5] Extracting Frames and Verifying Motion Continuity (MAE / SSIM)...")
+    from core.assembler import get_ffmpeg_exe
+    from PIL import Image
+    import numpy as np
+    ffmpeg_bin = get_ffmpeg_exe()
+
+    extracted_frames = []
+    for f_idx in [0, 4, 12, 24]:
+        out_f = proj_dir / f"temp_frame_{f_idx:03d}.png"
+        subprocess.run([
+            ffmpeg_bin, "-y",
+            "-i", str(clip_path),
+            "-vf", f"select=eq(n\\,{f_idx})",
+            "-vframes", "1",
+            str(out_f)
+        ], capture_output=True, check=True)
+        extracted_frames.append(Image.open(out_f).convert("RGB"))
+        out_f.unlink(missing_ok=True)
+
+    f0 = np.array(extracted_frames[0]).astype(float)
+    f4 = np.array(extracted_frames[1]).astype(float)
+    f12 = np.array(extracted_frames[2]).astype(float)
+    f24 = np.array(extracted_frames[3]).astype(float)
+
+    mae_0_4 = np.mean(np.abs(f0 - f4))
+    mae_4_12 = np.mean(np.abs(f4 - f12))
+
+    def compute_ssim(img1, img2):
+        C1 = (0.01 * 255)**2
+        C2 = (0.03 * 255)**2
+        mu1 = img1.mean()
+        mu2 = img2.mean()
+        sigma1_sq = ((img1 - mu1)**2).mean()
+        sigma2_sq = ((img2 - mu2)**2).mean()
+        sigma12 = ((img1 - mu1) * (img2 - mu2)).mean()
+        return ((2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)) / ((mu1**2 + mu2**2 + C1) * (sigma1_sq + sigma2_sq + C2))
+
+    ssim_0_4 = compute_ssim(f0, f4)
+    ssim_4_12 = compute_ssim(f4, f12)
+
+    w, h = extracted_frames[0].size
+    grid = Image.new("RGB", (w * 2, h * 2))
+    grid.paste(extracted_frames[0], (0, 0))
+    grid.paste(extracted_frames[1], (w, 0))
+    grid.paste(extracted_frames[2], (0, h))
+    grid.paste(extracted_frames[3], (w, h))
+    contact_sheet_path = proj_dir / "debug_frames_grid.png"
+    grid.save(contact_sheet_path)
+
     # Clean up temp script
     if script_path.exists():
         script_path.unlink()
@@ -171,6 +223,9 @@ def run_smoke_test():
     print(f"  Stage 2 (Distilled LTX-Video 2B):   {stage2_time:.2f}s | Peak VRAM: {metrics['stage2_vram']} | Process RAM: {metrics['stage2_ram']}")
     print(f"  Stage 3 (FFmpeg Assembly Post-FX): {stage3_time:.2f}s")
     print(f"  Total Pipeline Time:                {stage1_time + stage2_time + stage3_time:.2f}s")
+    print(f"  Frame Continuity (MAE F0->F4):      {mae_0_4:.2f} / 255.0 (SSIM: {ssim_0_4:.4f})")
+    print(f"  Frame Continuity (MAE F4->F12):     {mae_4_12:.2f} / 255.0 (SSIM: {ssim_4_12:.4f})")
+    print(f"  2x2 Contact Sheet:                 {contact_sheet_path}")
     print(f"  Master Cut Video:                  {master_path} ({master_path.stat().st_size / 1024:.1f} KB)")
     print("=" * 80)
 

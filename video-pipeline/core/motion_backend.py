@@ -238,28 +238,19 @@ class LTXVideoBackend(MotionBackend):
             torch.cuda.empty_cache()
 
         # -------------------------------------------------------------
-        # Phase 2B: Load Quantized Distilled DiT (0.9.6) + Timestep-Aware VAE (0.9.5)
+        # Phase 2B: Load Official LTXConditionPipeline + Timestep-Aware VAE (0.9.5)
         # -------------------------------------------------------------
-        logger.info("Phase 2B: Loading distilled 0.9.6 4-bit GGUF DiT + timestep-aware VAE from 'Lightricks/LTX-Video-0.9.5'...")
+        logger.info("Phase 2B: Loading distilled 0.9.6 GGUF DiT + LTXConditionPipeline from 'Lightricks/LTX-Video-0.9.5'...")
         from huggingface_hub import hf_hub_download
         from diffusers import (
-            LTXImageToVideoPipeline,
+            LTXConditionPipeline,
             LTXVideoTransformer3DModel,
             AutoencoderKLLTXVideo,
+            FlowMatchEulerDiscreteScheduler,
             GGUFQuantizationConfig
         )
-        import diffusers.pipelines.ltx.pipeline_ltx_image2video as p_ltx
+        from diffusers.pipelines.ltx.pipeline_ltx_condition import LTXVideoCondition
         from diffusers.utils import export_to_video
-
-        # Patch retrieve_timesteps to allow custom distilled timesteps without diffusers sigmas conflict
-        orig_retrieve = p_ltx.retrieve_timesteps
-
-        def patched_retrieve_timesteps(scheduler, num_inference_steps=None, device=None, timesteps=None, sigmas=None, **kwargs):
-            if timesteps is not None:
-                sigmas = None
-            return orig_retrieve(scheduler, num_inference_steps=num_inference_steps, device=device, timesteps=timesteps, sigmas=sigmas, **kwargs)
-
-        p_ltx.retrieve_timesteps = patched_retrieve_timesteps
 
         distilled_repo = "city96/LTX-Video-0.9.6-distilled-gguf"
         dit_filename = "ltxv-2b-0.9.6-distilled-04-25-Q4_K_M.gguf"
@@ -267,9 +258,11 @@ class LTXVideoBackend(MotionBackend):
 
         gguf_config = GGUFQuantizationConfig(compute_dtype=torch.bfloat16)
 
-        logger.info(f"Loading DiT transformer from local GGUF: {dit_filename}...")
+        logger.info(f"Loading DiT transformer from local GGUF: {dit_filename} with 0.9.5 config...")
         transformer = LTXVideoTransformer3DModel.from_single_file(
             gguf_path,
+            config="Lightricks/LTX-Video-0.9.5",
+            subfolder="transformer",
             quantization_config=gguf_config,
             torch_dtype=torch.bfloat16
         )
@@ -281,14 +274,19 @@ class LTXVideoBackend(MotionBackend):
             torch_dtype=torch.bfloat16
         )
 
-        pipe = LTXImageToVideoPipeline.from_pretrained(
-            "Lightricks/LTX-Video",
+        pipe = LTXConditionPipeline.from_pretrained(
+            "Lightricks/LTX-Video-0.9.5",
             transformer=transformer,
             vae=vae,
             text_encoder=None,
             tokenizer=None,
             torch_dtype=torch.bfloat16
         )
+
+        # Configure scheduler: disable dynamic shifting for fixed distilled sigmas
+        pipe.scheduler = FlowMatchEulerDiscreteScheduler.from_config(pipe.scheduler.config, use_dynamic_shifting=False)
+        distilled_sigmas = [1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875]
+        pipe.scheduler.set_timesteps(sigmas=distilled_sigmas)
 
         pipe.enable_model_cpu_offload()
         pipe.vae.enable_tiling()
@@ -300,22 +298,20 @@ class LTXVideoBackend(MotionBackend):
         prompt_embeds_cuda = prompt_embeds.to("cuda")
         prompt_mask_cuda = prompt_attention_mask.to("cuda")
 
-        # Official distilled 8-step schedule and decode parameters
-        distilled_timesteps = [1000, 993, 987, 981, 975, 909, 725, 0.03]
-        decode_timestep = 0.05
-        decode_noise_scale = 0.025
+        condition = LTXVideoCondition(image=keyframe_img, frame_index=0)
 
         pipe_kwargs = {
-            "image": keyframe_img,
+            "conditions": [condition],
             "prompt_embeds": prompt_embeds_cuda,
             "prompt_attention_mask": prompt_mask_cuda,
             "width": config.target_width,
             "height": config.target_height,
             "num_frames": shot.num_frames,
-            "timesteps": distilled_timesteps,
+            "timesteps": pipe.scheduler.timesteps,
             "guidance_scale": 1.0,
-            "decode_timestep": decode_timestep,
-            "decode_noise_scale": decode_noise_scale,
+            "image_cond_noise_scale": 0.025,
+            "decode_timestep": 0.05,
+            "decode_noise_scale": 0.025,
             "generator": generator
         }
         if guidance_scale > 1.0 and negative_embeds is not None:
@@ -323,11 +319,23 @@ class LTXVideoBackend(MotionBackend):
             pipe_kwargs["negative_prompt_attention_mask"] = negative_attention_mask.to("cuda")
             pipe_kwargs["guidance_scale"] = guidance_scale
 
-        logger.info(f"Rendering {shot.num_frames} frames with distilled LTX-Video (8 steps, CFG={pipe_kwargs['guidance_scale']}, decode_timestep={decode_timestep})...")
+        logger.info(f"Rendering {shot.num_frames} frames with distilled LTXConditionPipeline (8 steps, CFG={pipe_kwargs['guidance_scale']}, decode_timestep=0.05)...")
         video_frames = pipe(**pipe_kwargs).frames[0]
 
         out_clip = Path(output_clip_path)
         out_clip.parent.mkdir(parents=True, exist_ok=True)
+        export_to_video(video_frames, str(out_clip), fps=config.target_fps)
+
+        # Cleanup
+        del pipe, transformer, vae, prompt_embeds_cuda, prompt_mask_cuda, video_frames
+        if "negative_prompt_embeds" in pipe_kwargs:
+            del pipe_kwargs["negative_prompt_embeds"], pipe_kwargs["negative_prompt_attention_mask"]
+        del prompt_embeds, prompt_attention_mask
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return out_clip
         export_to_video(video_frames, str(out_clip), fps=config.target_fps)
 
         # Cleanup
